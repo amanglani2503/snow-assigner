@@ -51,9 +51,15 @@ export default function Board({ tickets }: { tickets: Ticket[] }) {
                 <td>{t.deadline ? when(t.deadline) : '-'}</td>
                 <td>
                   <span className={'badge ' + t.status}>{t.status}</span>
+                  {t.reassign_pending && <span className="badge REASSIGNING">REASSIGNING</span>}
                   {t.breached && <span className="badge BREACHED">BREACHED</span>}
                 </td>
-                <td>{t.assigned_to_name ?? '-'}</td>
+                <td>
+                  {t.assigned_to_name ?? '-'}
+                  {t.previous_assignee_names.length > 0 && (
+                    <div className="hint">reassigned from {t.previous_assignee_names.join(', ')}</div>
+                  )}
+                </td>
                 <td>{countdown(t)}</td>
               </tr>
             ))}

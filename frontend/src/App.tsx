@@ -109,7 +109,7 @@ export default function App() {
           </nav>
           {tab === 'board' && <Board tickets={tickets} />}
           {tab === 'roster' && <Roster clock={clock} />}
-          {tab === 'log' && <Insights audit={audit} metrics={metrics} />}
+          {tab === 'log' && <Insights audit={audit} metrics={metrics} onChange={refresh} />}
         </main>
       </div>
     </div>

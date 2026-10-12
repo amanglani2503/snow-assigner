@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from app import config
+from app.agent.assign import eligible_members
 from app.agent.engine import assign_one_by_rules, tick
 from app.agent.tools import current_ticket
 
@@ -51,6 +52,8 @@ async def dispatch(store, runner_fn=None, max_concurrent=None):
         return []
 
     limit = max_concurrent or config.AGENT_MAX_CONCURRENT
+    now = store.clock.now()
+    store.ensure_roster(now)
     pending = sorted(
         (t for t in store.tickets.values()
          if t.status == "PENDING" and t.sys_id not in store.in_flight),

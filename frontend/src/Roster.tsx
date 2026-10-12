@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { ClockInfo, RosterData } from './api'
 
-const LABEL: Record<string, string> = { M: 'M', E: 'E', OFF: '·', PL: 'PL', CH: 'CH', LEAVE: 'L' }
+const LABEL: Record<string, string> = { M: 'M', E: 'E', OFF: '·', PL: 'PL', CH: 'CH', UL: 'UL', LEAVE: 'L' }
 const WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const clamp = (v: string, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(v) || 0))
 
@@ -42,6 +42,7 @@ export default function Roster({ clock }: { clock: ClockInfo | null }) {
           <span className="cell OFF">·</span> off &nbsp;
           <span className="cell PL">PL</span> planned leave &nbsp;
           <span className="cell CH">CH</span> company holiday
+          <span className="cell UL">UL</span> left during shift
         </span>
       </div>
 
