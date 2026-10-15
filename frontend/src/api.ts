@@ -25,6 +25,8 @@ export interface Ticket {
   reason: string
   assigned_to_name: string | null
   seconds_to_deadline: number | null
+  previous_assignee_names: string[]
+  reassign_pending: boolean
 }
 
 export interface ClockInfo { now: string; weekday: string; in_service_hours: boolean; holiday: boolean }
@@ -37,8 +39,10 @@ export interface Metrics {
   breached: number
   within_sla_pct: number | null
   avg_seconds_to_assign: number | null
-  load_per_member: { id: string; name: string; group: string; open: number }[]
+  load_per_member: { id: string; name: string; group: string; open: number; code: string; on_shift: boolean }[]
 }
+
+export interface LeaveResult { member: string; group: string; tickets_queued: string[]; group_covered: boolean }
 
 export interface AuditEntry { ts: string; ticket: string; event: string; detail: string; actor: string}
 
@@ -83,4 +87,6 @@ export const api = {
   reset: () => post<{ status: string }>('/reset'),
   generateRoster: (month: string, pl: number, ch: number, holidays: number) =>
   post<RosterData>(`/roster/${month}/generate?leave_prob=${pl}&ch_prob=${ch}&org_holidays=${holidays}`),
+  memberLeaves: (id: string) => post<LeaveResult>(`/members/${id}/leave-now`),
+  memberBack: (id: string) => post<{ status: string }>(`/members/${id}/back`),
 }

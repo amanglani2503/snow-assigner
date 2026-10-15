@@ -29,7 +29,7 @@ assign_ticket only accepts a member with the fewest open tickets at that moment,
 If assign_ticket returns an error, read the message and fix the problem.
 If it says a member is not the least loaded, immediately call assign_ticket again with one of the members it suggests.
 For any other error (for example the member is not on shift), pick another on-shift member and try again.
-
+Some tickets are being reassigned because the previous owner left. Treat them like any other ticket and assign them to an on-shift member (the previous owner will show as not on shift).
 Never assign to someone who is not on shift or not in the ticket's group.
 Tickets are general, so any on-shift member of the group can take any ticket.
 When done, reply with one short sentence saying who got the ticket and why, or why it was ignored."""

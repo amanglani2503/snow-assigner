@@ -7,9 +7,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.roster.generator import days_in_month, org_holiday_dates
-from app.agent.engine import tick
+from app.agent.assign import code_for
+from app.agent.engine import AssignmentError, mark_member_unavailable, restore_member, tick
 from app.roster.generator import days_in_month, org_holiday_dates
 from app.roster.models import GROUPS
+from app.rules.shifts import is_on_shift
 from app.rules.sla import is_serviceable
 from app.state import store
 from app.tickets.simulate import SCENARIOS, simulate
@@ -31,6 +33,9 @@ class ClockRequest(BaseModel):
 class ModeRequest(BaseModel):
     mode: str   # "rules" or "agent"
 
+class LeaveRequest(BaseModel):
+    reason: str = "left during shift"
+
 # ---------- helpers ----------
 
 def _names() -> dict:
@@ -41,10 +46,11 @@ def ticket_view(t, names=None) -> dict:
     names = names or _names()
     d = asdict(t)
     d["assigned_to_name"] = names.get(t.assigned_to)
+    d["previous_assignee_names"] = [names.get(i, i) for i in t.previous_assignees]
     now = store.clock.now()
     d["seconds_to_deadline"] = (
         int((t.deadline - now).total_seconds())
-        if t.deadline and t.status == "PENDING" else None
+        if t.deadline and t.status == "PENDING" and not t.reassign_pending else None
     )
     return d
 
@@ -175,6 +181,23 @@ async def generate_roster_route(
                       ch_prob=ch_prob, org_holidays=org_holidays)
     return roster_view(month)
 
+@router.post("/members/{member_id}/leave-now")
+async def member_leaves(member_id: str, body: Optional[LeaveRequest] = None):
+    """A member on shift has to leave: their open tickets are handed to someone else on shift."""
+    reason = body.reason if body else "left during shift"
+    try:
+        return mark_member_unavailable(store, member_id, store.clock.now(), reason)
+    except AssignmentError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/members/{member_id}/back")
+async def member_back(member_id: str):
+    try:
+        restore_member(store, member_id, store.clock.now())
+    except AssignmentError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "ok"}
 
 @router.get("/metrics")
 async def metrics():
@@ -183,6 +206,8 @@ async def metrics():
     ok = [t for t in assigned if not t.breached]
     waits = [(t.assigned_at - t.opened_at).total_seconds() for t in assigned]
     load = store.load()
+    now = store.clock.now()
+    store.ensure_roster(now)
     return {
         "total": len(tickets),
         "assigned": len(assigned),
@@ -192,7 +217,9 @@ async def metrics():
         "within_sla_pct": round(100 * len(ok) / len(assigned), 1) if assigned else None,
         "avg_seconds_to_assign": round(sum(waits) / len(waits), 1) if waits else None,
         "load_per_member": [
-            {"id": m.id, "name": m.name, "group": m.group, "open": load.get(m.id, 0)}
+            {"id": m.id, "name": m.name, "group": m.group, "open": load.get(m.id, 0),
+             "code": code_for(store.roster, m.id, now),
+             "on_shift": is_on_shift(code_for(store.roster, m.id, now), now)}
             for m in store.members
         ],
     }

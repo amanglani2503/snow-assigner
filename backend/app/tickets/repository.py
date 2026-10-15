@@ -20,6 +20,7 @@ class Store:
         self.audit = []
         self.last_assigned = {}
         self.in_flight = set()
+        self.absence_originals = {}   # (member_id, day) -> roster code before they left
         self._seq = 0
         self._numbers = 0
 
@@ -69,6 +70,12 @@ class Store:
     def log(self, ts, ticket, event, detail="", actor="rules"):
         self.audit.append({
             "ts": ts.isoformat(), "ticket": ticket.number,
+            "event": event, "detail": detail, "actor": actor,
+        })
+
+    def log_event(self, ts, ticket_number, event, detail, actor="system"):
+        self.audit.append({
+            "ts": ts.isoformat(), "ticket": ticket_number,
             "event": event, "detail": detail, "actor": actor,
         })
 

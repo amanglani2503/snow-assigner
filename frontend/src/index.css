@@ -87,3 +87,16 @@ tr.toolrow td { color: #6b7280; font-size: 12px; }
 table.roster th.holiday { background: #fff3bf; }
 .loc { font-size: 10px; color: #8a93a6; margin-left: 4px; }
 .randrow { gap: 12px; }
+.cell.UL { background: #ffd8a8; color: #d9480f; }
+.badge.REASSIGNING, .badge.REASSIGN_QUEUED { background: #e5dbff; color: #5f3dc4; }
+.badge.REASSIGNED { background: #d0ebff; color: #1864ab; }
+.badge.NO_COVERAGE { background: #ffe3e3; color: #c92a2a; }
+.badge.MEMBER_LEFT { background: #ffd8a8; color: #d9480f; }
+.badge.MEMBER_BACK { background: #d3f9d8; color: #2b8a3e; }
+.actor.system { background: #fff3bf; color: #8a6d00; }
+.shiftdot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.shiftdot.on { background: #2f9e44; }
+.shiftdot.off { background: #ced4da; }
+.loadaction { width: 110px; text-align: right; }
+button.small { padding: 3px 8px; font-size: 12px; }
+button.warn { background: #e8590c; }

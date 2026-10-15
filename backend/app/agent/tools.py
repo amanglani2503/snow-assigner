@@ -110,14 +110,14 @@ async def get_group_members(group: str) -> dict:
 
 async def get_availability(member_id: str) -> dict:
     """Check whether a member is on shift right now, from the monthly roster.
-    Shift M runs 09:00-18:30 and shift E runs 12:30-22:00. OFF, PL (planned leave) and CH
+    Shift M runs 09:00-18:30 and shift E runs 12:30-22:00. OFF, PL (planned leave), UL (left during the shift) and CH
     (company holiday at the member's location) mean unavailable.
 
     Args:
         member_id: The member id, for example idaho-1.
 
     Returns:
-        dict with name, group, today_code (M, E, OFF, PL or CH), shift_hours and on_shift_now.
+        dict with name, group, today_code (M, E, OFF, PL, UL or CH), shift_hours and on_shift_now.
     """
     now = store.clock.now()
     store.ensure_roster(now)
