@@ -42,13 +42,18 @@ def test_simulate_normal_then_tick_assigns(client):
     assert all(t["status"] == "ASSIGNED" and t["assigned_to_name"] for t in tickets)
 
 
-def test_out_of_hours_is_ignored(client):
+def test_out_of_hours_is_queued_then_assigned_next_morning(client):
     set_monday_10am(client)
-    client.post("/tickets/simulate", json={"scenario": "out_of_hours", "group": "EMP"})
+    client.post("/tickets/simulate", json={"scenario": "out_of_hours", "group": "EMP"})   # clock -> Mon 23:15
     client.post("/tick")
     t = client.get("/tickets").json()[0]
-    assert t["status"] == "IGNORED" and t["assigned_to"] is None
-    assert client.get("/metrics").json()["ignored"] == 1
+    assert t["status"] == "QUEUED" and t["assigned_to"] is None
+    assert t["release_at"].startswith("2026-10-13T09:00")
+    assert client.get("/metrics").json()["queued"] == 1
+    client.put("/clock", json={"time": "2026-10-13T09:00:00"})
+    client.post("/tick")
+    t = client.get("/tickets").json()[0]
+    assert t["status"] == "ASSIGNED" and t["breached"] is False
 
 
 def test_burst_metrics(client):
@@ -77,7 +82,7 @@ def test_roster_month(client):
     r = client.get("/roster/2026-10")
     assert r.status_code == 200
     body = r.json()
-    assert len(body["days"]) == 31 and len(body["members"]) == 15
+    assert len(body["days"]) == 31 and len(body["members"]) == 18
     assert body["roster"]["idaho-1"]["2026-10-10"] == "OFF"      # Saturday
     assert client.get("/roster/2026-13").status_code == 400
 

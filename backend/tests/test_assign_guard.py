@@ -52,11 +52,12 @@ def test_already_assigned_rejected():
         assign_to_member(s, t, t.assigned_to, now, "again", actor="agent")
 
 
-def test_ignored_ticket_rejected():
+def test_queued_ticket_cannot_be_assigned_early():
     s = fresh()
     t = one(s, "out_of_hours", "EMP")
-    with pytest.raises(AssignmentError, match="outside service hours"):
+    with pytest.raises(AssignmentError, match="queued"):
         assign_to_member(s, t, "emp-1", s.clock.now(), "test", actor="agent")
+    assert t.status == "QUEUED"
 
 
 def test_valid_agent_assignment_is_logged_with_actor():

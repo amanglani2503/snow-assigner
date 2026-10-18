@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
-
-from app.agent.engine import AssignmentError, assign_to_member, ignore_ticket_now
+from app.agent.engine import AssignmentError, assign_to_member
 from app.state import store
 
 router = APIRouter(tags=["mock-servicenow"])
@@ -16,16 +15,13 @@ def _error(status: int, message: str, detail: str = ""):
 
 def _incident(t) -> dict:
     return {
-        "sys_id": t.sys_id,
-        "number": t.number,
-        "short_description": t.short_description,
-        "priority": t.priority,
-        "assignment_group": t.assignment_group,
-        "opened_at": t.opened_at.isoformat(),
-        "assigned_to": t.assigned_to or "",
-        "state": {"ASSIGNED": "2", "IGNORED": "7"}.get(t.status, "1"),  # 1 New, 2 In Progress, 7 Closed
+        "sys_id": t.sys_id, "number": t.number, "short_description": t.short_description,
+        "priority": t.priority, "assignment_group": t.assignment_group,
+        "opened_at": t.opened_at.isoformat(), "assigned_to": t.assigned_to or "",
+        "state": {"ASSIGNED": "2", "QUEUED": "3"}.get(t.status, "1"),   # 1 New, 2 In Progress, 3 On Hold
         "u_sla_due": t.deadline.isoformat() if t.deadline else "",
-        "u_in_service_hours": t.in_service_hours,
+        "u_queued": t.status == "QUEUED",
+        "u_level": t.level,
     }
 
 
@@ -63,21 +59,16 @@ async def get_incident(sys_id: str):
 
 @router.patch("/api/now/table/incident/{sys_id}")
 async def patch_incident(sys_id: str, body: dict, x_actor: str = Header("agent")):
-    """Assign: {"assigned_to": "<member id>", "work_notes": "<why>"}.
-    Ignore (outside service window): {"u_ignore": true, "work_notes": "<why>"}.
+    """Assign a ticket: {"assigned_to": "<member id>", "work_notes": "<why>"}.
     X-Actor is a POC-only header so the audit log can show who made the call."""
     t = store.tickets.get(sys_id)
     if t is None:
         return _error(404, "No Record found", f"Record doesn't exist: {sys_id}")
+    if not body.get("assigned_to"):
+        return _error(400, "assigned_to is required")
+    reason = body.get("work_notes") or "Assigned via ServiceNow API"
     try:
-        if body.get("u_ignore"):
-            ignore_ticket_now(store, t, store.clock.now(),
-                              body.get("work_notes") or "Ignored via ServiceNow API", actor=x_actor)
-        else:
-            if not body.get("assigned_to"):
-                return _error(400, "assigned_to is required")
-            reason = body.get("work_notes") or "Assigned via ServiceNow API"
-            assign_to_member(store, t, body["assigned_to"], store.clock.now(), reason, actor=x_actor)
+        assign_to_member(store, t, body["assigned_to"], store.clock.now(), reason, actor=x_actor)
     except AssignmentError as e:
         return _error(400, "Operation Failed", str(e))
     return {"result": _incident(t)}

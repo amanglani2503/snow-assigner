@@ -53,22 +53,25 @@ def test_burst_spreads_evenly():
     assert max(counts.values()) - min(counts.values()) <= 1
 
 
-def test_out_of_hours_is_ignored_and_never_assigned():
+def test_out_of_hours_is_queued_and_assigned_when_the_shift_starts():
     s = fresh()
     t = simulate(s, "out_of_hours", group="EMP")["created"][0]   # Mon 23:15
-    assert t.status == "IGNORED" and t.deadline is None
+    assert t.status == "QUEUED" and not t.in_service_hours
+    assert t.release_at == dt(2026, 10, 13, 9, 0) and t.deadline == dt(2026, 10, 13, 9, 30)
     tick(s, s.clock.now())
-    tick(s, dt(2026, 10, 13, 9, 0))                              # next morning
-    assert t.status == "IGNORED" and t.assigned_to is None
+    assert t.status == "QUEUED" and t.assigned_to is None
+    tick(s, dt(2026, 10, 13, 9, 0))
+    assert t.status == "ASSIGNED" and not t.breached
 
 
-def test_weekend_is_ignored():
+def test_weekend_ticket_is_queued_until_monday():
     s = fresh()
     t = simulate(s, "weekend", group="DBE")["created"][0]        # Sat 17 Oct 11:00
-    assert t.status == "IGNORED"
-    tick(s, s.clock.now())
+    assert t.status == "QUEUED" and t.release_at == dt(2026, 10, 19, 9, 0)
+    tick(s, dt(2026, 10, 18, 12))                                 # Sunday
+    assert t.status == "QUEUED"
     tick(s, dt(2026, 10, 19, 9, 0))
-    assert t.status == "IGNORED"
+    assert t.status == "ASSIGNED"
 
 
 def test_edge_2150_assigned_immediately():

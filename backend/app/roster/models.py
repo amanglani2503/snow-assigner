@@ -11,6 +11,7 @@ class Member:
 
 
 GROUPS = ["IDAHO", "EMP", "DBE", "DB-LEGI1", "DB-LEGI2", "NGA"]
+L2_GROUP = "L2-SUPPORT"
 
 # Mock locations. Location-wide company holidays (CH) are only applied on days when every
 # group still has a morning and an evening person, so keep one location (Noida here) that
@@ -31,4 +32,8 @@ MEMBERS = [
     Member("nga-1", "Tara Menon", "NGA", ("network", "firewall"), "Pune"),
     Member("nga-2", "Yash Kulkarni", "NGA", ("network", "vpn"), "Noida"),
     Member("nga-3", "Riya Bose", "NGA", ("vpn", "dns"), "Bengaluru"),
+    # L2 support (3)
+    Member("l2-1", "Neha Kapoor", "L2-SUPPORT", ("escalations",), "Pune"),
+    Member("l2-2", "Rahul Bhatt", "L2-SUPPORT", ("escalations",), "Noida"),
+    Member("l2-3", "Pooja Desai", "L2-SUPPORT", ("escalations",), "Bengaluru"),
 ]

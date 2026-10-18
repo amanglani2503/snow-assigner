@@ -1,7 +1,7 @@
 from app.agent.assign import code_for, eligible_members, pick_least_loaded
+from app.roster.models import L2_GROUP
 from app.rules.clock import IST
 from app.rules.shifts import is_on_shift
-from app.tickets.generator import ignored_reason
 
 
 class AssignmentError(ValueError):
@@ -13,11 +13,8 @@ def _name(store, member_id):
     return m.name if m else str(member_id)
 
 
-def validate_assignment(store, ticket, member_id, now, actor="rules"):
-    if ticket.status == "IGNORED" or not ticket.in_service_hours:
-        raise AssignmentError("Ticket arrived outside service hours (Mon-Fri 09:00-22:00) and is ignored")
-    if ticket.status == "ASSIGNED":
-        raise AssignmentError(f"Ticket {ticket.number} is already assigned")
+def _check_member(store, ticket, member_id, now):
+    """The member must exist, belong to the ticket's group and be on shift right now."""
     member = next((m for m in store.members if m.id == member_id), None)
     if member is None:
         raise AssignmentError(f"Unknown member {member_id}")
@@ -25,6 +22,16 @@ def validate_assignment(store, ticket, member_id, now, actor="rules"):
         raise AssignmentError(f"{member.name} is not in group {ticket.assignment_group}")
     if not is_on_shift(code_for(store.roster, member.id, now), now):
         raise AssignmentError(f"{member.name} is not on shift at {now:%a %H:%M}")
+    return member
+
+
+def validate_assignment(store, ticket, member_id, now, actor="rules"):
+    if ticket.status == "QUEUED":
+        raise AssignmentError(
+            f"Ticket {ticket.number} is queued until {ticket.release_at:%a %d %b %H:%M} and cannot be assigned yet")
+    if ticket.status == "ASSIGNED":
+        raise AssignmentError(f"Ticket {ticket.number} is already assigned")
+    member = _check_member(store, ticket, member_id, now)
 
     if actor == "agent":
         candidates = eligible_members(ticket.assignment_group, now, store.members, store.roster)
@@ -38,21 +45,17 @@ def validate_assignment(store, ticket, member_id, now, actor="rules"):
     return member
 
 
-def ignore_ticket_now(store, ticket, now, reason, actor="rules"):
-    """The single place where a ticket gets ignored. Only tickets that arrived outside
-    the service window (weekend, outside 09:00-22:00, company-wide holiday) can be ignored."""
-    if ticket.status == "ASSIGNED":
-        raise AssignmentError(f"Ticket {ticket.number} is already assigned")
-    if ticket.status == "IGNORED":
-        raise AssignmentError(f"Ticket {ticket.number} is already ignored")
-    if ticket.in_service_hours:
-        raise AssignmentError(
-            "Ticket arrived within the service window (Mon-Fri 09:00-22:00, not a company holiday) "
-            "and must be assigned, not ignored")
-    ticket.status = "IGNORED"
-    ticket.deadline = None
-    ticket.reason = reason
-    store.log(now, ticket, "IGNORED", reason, actor)
+def release_due_tickets(store, now):
+    """Queued tickets whose service window has opened become PENDING, and their SLA clock starts."""
+    released = []
+    queued = [t for t in store.tickets.values() if t.status == "QUEUED"]
+    for t in sorted(queued, key=lambda t: (t.release_at or t.opened_at, t.number)):
+        if t.release_at is not None and now >= t.release_at:
+            t.status = "PENDING"
+            released.append(t)
+            store.log(now, t, "RELEASED",
+                      f"Service window open: queued ticket released, SLA due {t.deadline:%a %H:%M}", "system")
+    return released
 
 
 def assign_to_member(store, ticket, member_id, now, reason, actor="rules"):
@@ -80,8 +83,9 @@ def assign_to_member(store, ticket, member_id, now, reason, actor="rules"):
         ticket.breached = now > ticket.deadline
     store.last_assigned[member.id] = store.next_seq()
 
-    if reassigning:
-        reason = f"Reassigned from {_name(store, ticket.previous_assignees[-1])}: {reason}"
+    if ticket.handover_note:
+        reason = f"{ticket.handover_note}: {reason}"
+        ticket.handover_note = ""
     ticket.reason = reason
     if ticket.breached:
         ticket.reason += " [SLA breached]"
@@ -90,6 +94,25 @@ def assign_to_member(store, ticket, member_id, now, reason, actor="rules"):
     store.log(now, ticket, "REASSIGNED" if reassigning else "ASSIGNED",
               f"{member.name} ({member.id}): {ticket.reason}", actor)
     return member
+
+
+def _queue_for_new_owner(store, ticket, now, note):
+    """Take a ticket away from its owner and put it back in the queue for a new one."""
+    ticket.previous_assignees.append(ticket.assigned_to)
+    ticket.status = "PENDING"
+    ticket.assigned_to = None
+    ticket.reassign_pending = True
+    ticket.handover_note = note
+
+
+def _warn_if_uncovered(store, tickets, group, now):
+    covered = bool(eligible_members(group, now, store.members, store.roster))
+    if tickets and not covered:
+        for t in tickets:
+            store.log(now, t, "NO_COVERAGE",
+                      f"No member of {group} is on shift: waits until someone's shift starts "
+                      f"(escalate to the team lead)", "system")
+    return covered
 
 
 def mark_member_unavailable(store, member_id, now, reason="left during shift"):
@@ -110,21 +133,13 @@ def mark_member_unavailable(store, member_id, now, reason="left during shift"):
     moved = []
     for t in sorted(store.tickets.values(), key=lambda t: (t.opened_at, t.number)):
         if t.status == "ASSIGNED" and t.assigned_to == member_id:
-            t.status = "PENDING"
-            t.assigned_to = None
-            t.previous_assignees.append(member_id)
-            t.reassign_pending = True
+            _queue_for_new_owner(store, t, now, f"Reassigned from {member.name}")
             moved.append(t)
             store.log(now, t, "REASSIGN_QUEUED", f"{member.name} left ({reason}); needs a new owner", "system")
 
-    covered = bool(eligible_members(member.group, now, store.members, store.roster))
     store.log_event(now, "-", "MEMBER_LEFT",
                     f"{member.name} left at {now:%H:%M} ({reason}); {len(moved)} open ticket(s) handed over", "system")
-    if moved and not covered:
-        for t in moved:
-            store.log(now, t, "NO_COVERAGE",
-                      f"No other member of {member.group} is on shift: waits until someone's shift starts "
-                      f"(escalate to the team lead)", "system")
+    covered = _warn_if_uncovered(store, moved, member.group, now)
     return {"member": member.name, "group": member.group,
             "tickets_queued": [t.number for t in moved], "group_covered": covered}
 
@@ -142,10 +157,52 @@ def restore_member(store, member_id, now):
     store.log_event(now, "-", "MEMBER_BACK", f"{member.name} is back on shift", "system")
 
 
+def transfer_ticket(store, ticket, member_id, now, reason="", actor="user"):
+    """Hand an assigned ticket to another on-shift member of the same group, right away.
+    A person decides this, so the least-loaded rule is not applied. The SLA is unchanged."""
+    store.ensure_roster(now)
+    if ticket.status != "ASSIGNED":
+        raise AssignmentError("Only assigned tickets can be transferred")
+    if member_id == ticket.assigned_to:
+        raise AssignmentError("Ticket is already assigned to that member")
+    member = _check_member(store, ticket, member_id, now)
+
+    old = ticket.assigned_to
+    ticket.previous_assignees.append(old)
+    ticket.assigned_to = member.id
+    store.last_assigned[member.id] = store.next_seq()
+    note = f"Transferred from {_name(store, old)} to {member.name}" + (f": {reason}" if reason else "")
+    ticket.reason = note
+    store.log(now, ticket, "TRANSFERRED", f"{note} (by {actor})", actor)
+    return member
+
+
+def escalate_to_l2(store, ticket, now, reason="", actor="user"):
+    """Send an assigned ticket to second-level support. It goes back to the queue under the
+    L2 group and is given to an on-shift L2 member. The SLA is unchanged."""
+    store.ensure_roster(now)
+    if ticket.status != "ASSIGNED":
+        raise AssignmentError("Only assigned tickets can be escalated to L2")
+    if ticket.assignment_group == L2_GROUP:
+        raise AssignmentError("Ticket is already with L2 support")
+
+    old_group = ticket.assignment_group
+    old_owner = _name(store, ticket.assigned_to)
+    _queue_for_new_owner(store, ticket, now, f"Escalated to L2 from {old_owner} ({old_group})")
+    ticket.escalated_from = ticket.escalated_from or old_group
+    ticket.assignment_group = L2_GROUP
+    ticket.level = "L2"
+    store.log(now, ticket, "ESCALATED_L2",
+              f"Escalated from {old_group} ({old_owner}) to L2 by {actor}" + (f": {reason}" if reason else ""), actor)
+    covered = _warn_if_uncovered(store, [ticket], L2_GROUP, now)
+    return {"ticket": ticket.number, "l2_covered": covered}
+
+
 def tick(store, now=None):
     now = now or store.clock.now()
     store.ensure_roster(now)
     first_new = len(store.audit)
+    release_due_tickets(store, now)
     load = store.load()
 
     pending = sorted(
@@ -155,14 +212,10 @@ def tick(store, now=None):
     )
 
     for t in pending:
-        if not t.in_service_hours:
-            # Out-of-hours / weekend / holiday ticket that is still PENDING: ignore it by rules.
-            ignore_ticket_now(store, t, now, ignored_reason(store, t.opened_at), actor="rules")
-            continue
         candidates = eligible_members(t.assignment_group, now, store.members, store.roster)
         chosen = pick_least_loaded(candidates, load, store.last_assigned)
         if chosen is None:
-            continue
+            continue    # nobody on shift: the ticket waits
 
         before = load.get(chosen.id, 0)
         names = ", ".join(m.name for m in candidates)
@@ -174,13 +227,9 @@ def tick(store, now=None):
 
 
 def assign_one_by_rules(store, ticket, now=None, actor="rules"):
-    """Rules-based decision for a single ticket (the agent's fallback): ignore it if it
-    arrived outside the service window, otherwise assign it."""
+    """Rules-based assignment of a single ticket. Used as the agent's fallback."""
     now = now or store.clock.now()
     store.ensure_roster(now)
-    if not ticket.in_service_hours:
-        ignore_ticket_now(store, ticket, now, ignored_reason(store, ticket.opened_at), actor=actor)
-        return True
     candidates = eligible_members(ticket.assignment_group, now, store.members, store.roster)
     load = store.load()
     chosen = pick_least_loaded(candidates, load, store.last_assigned)

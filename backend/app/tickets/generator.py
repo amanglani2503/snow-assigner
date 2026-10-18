@@ -1,7 +1,8 @@
 import uuid
 from datetime import timedelta
 
-from app.rules.sla import SLA_MINUTES, is_serviceable
+from app.rules.clock import IST
+from app.rules.sla import SERVICE_START, SLA_MINUTES, is_serviceable
 
 from .models import Ticket
 
@@ -19,21 +20,22 @@ DESCRIPTIONS = [
     "Data mismatch between two systems",
 ]
 
-IGNORED_REASON = "Ignored: arrived outside service hours (Mon-Fri 09:00-22:00)"
-HOLIDAY_REASON = "Ignored: company holiday (all locations), not serviceable"
 
-
-def ignored_reason(store, opened_at) -> str:
-    if is_serviceable(opened_at) and store.is_org_holiday(opened_at):
-        return HOLIDAY_REASON
-    return IGNORED_REASON
+def queued_reason(store, opened_at, release_at) -> str:
+    if opened_at.astimezone(IST).weekday() >= 5:
+        why = "on a weekend"
+    elif is_serviceable(opened_at) and store.is_org_holiday(opened_at):
+        why = "on a company holiday"
+    else:
+        why = "outside 09:00-22:00"
+    return f"Queued: arrived {why}. Assigned when the shift starts ({release_at:%a %d %b %H:%M})"
 
 
 def build_ticket(store, group, opened_at, rng) -> Ticket:
     in_hours = store.is_serviceable(opened_at)
-    # In agent mode the agent makes the call: every ticket starts PENDING, even out-of-hours ones.
-    # In rules mode, out-of-hours tickets are ignored right away.
-    ignored = not in_hours and store.mode != "agent"
+    # Outside the service window the ticket is queued. Its SLA clock starts when the window opens.
+    release_at = None if in_hours else store.next_service_start(opened_at)
+    clock_start = opened_at if in_hours else release_at
     return Ticket(
         sys_id=uuid.UUID(int=rng.getrandbits(128)).hex,
         number=store.next_number(),
@@ -42,7 +44,8 @@ def build_ticket(store, group, opened_at, rng) -> Ticket:
         assignment_group=group,
         opened_at=opened_at,
         in_service_hours=in_hours,
-        deadline=opened_at + timedelta(minutes=SLA_MINUTES) if in_hours else None,
-        status="IGNORED" if ignored else "PENDING",
-        reason=ignored_reason(store, opened_at) if ignored else "",
+        deadline=clock_start + timedelta(minutes=SLA_MINUTES),
+        status="PENDING" if in_hours else "QUEUED",
+        release_at=release_at,
+        reason="" if in_hours else queued_reason(store, opened_at, release_at),
     )

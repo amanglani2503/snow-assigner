@@ -1,9 +1,10 @@
 from collections import Counter
+from datetime import datetime, timedelta
 
 from app.roster.generator import generate_roster
 from app.roster.models import MEMBERS
 from app.rules.clock import IST, Clock
-from app.rules.sla import is_serviceable as in_service_window
+from app.rules.sla import SERVICE_START, is_serviceable as in_service_window
 
 class Store:
     """In-memory store. Replace with Firestore later behind the same methods."""
@@ -46,6 +47,20 @@ class Store:
     def is_serviceable(self, when) -> bool:
         """Mon-Fri 09:00-22:00, and not a company-wide holiday."""
         return in_service_window(when) and not self.is_org_holiday(when)
+
+    def next_service_start(self, when):
+        """First moment at or after `when` when the service window is open
+        (skips evenings, weekends and company-wide holidays)."""
+        t = when.astimezone(IST)
+        if self.is_serviceable(t):
+            return t
+        d = t.date()
+        for _ in range(120):
+            start = datetime.combine(d, SERVICE_START, tzinfo=IST)
+            if start >= t and self.is_serviceable(start):
+                return start
+            d += timedelta(days=1)
+        raise ValueError("No service day found in the next 120 days")
 
     # ---- tickets ----
     def add_ticket(self, ticket) -> bool:
