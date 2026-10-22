@@ -2,12 +2,14 @@ export const GROUPS = ['IDAHO', 'EMP', 'DBE', 'DB-LEGI1', 'DB-LEGI2', 'NGA']
 export const SCENARIOS = [
   { id: 'normal', label: 'Normal', hint: '3 tickets at the current simulated time' },
   { id: 'burst', label: 'Burst', hint: 'Jumps to 14:00, 20 tickets (NGA by default)' },
-  { id: 'out_of_hours', label: 'Out of hours', hint: 'Jumps to 23:15, ticket is ignored' },
-  { id: 'weekend', label: 'Weekend', hint: 'Jumps to Saturday 11:00, ticket is ignored' },
-  { id: 'holiday', label: 'Company holiday', hint: 'Jumps to the next company-wide holiday (generate one in the Roster tab first), ticket is ignored' },
+  { id: 'holiday', label: 'Company holiday', hint: 'Jumps to the next company-wide holiday (generate one in the Roster tab first), ticket is queued' },
   { id: 'edge_2150', label: 'Edge 21:50', hint: 'Jumps to Friday 21:50, deadline 22:20' },
   { id: 'duplicate', label: 'Duplicate', hint: 'Same ticket sent twice, one is rejected' },
+  { id: 'out_of_hours', label: 'Out of hours', hint: 'Jumps to 23:15, ticket is queued until the next 09:00' },
+  { id: 'weekend', label: 'Weekend', hint: 'Jumps to Saturday 11:00, ticket is queued until Monday 09:00' },
 ]
+
+export const L2_GROUP = 'L2-SUPPORT'
 
 export interface Ticket {
   sys_id: string
@@ -18,7 +20,10 @@ export interface Ticket {
   opened_at: string
   in_service_hours: boolean
   deadline: string | null
-  status: 'PENDING' | 'ASSIGNED' | 'IGNORED'
+  status: 'QUEUED' | 'PENDING' | 'ASSIGNED'
+  release_at: string | null
+  level: string
+  escalated_from: string | null
   assigned_to: string | null
   assigned_at: string | null
   breached: boolean
@@ -35,7 +40,7 @@ export interface Metrics {
   total: number
   assigned: number
   pending: number
-  ignored: number
+  queued: number
   breached: number
   within_sla_pct: number | null
   avg_seconds_to_assign: number | null
@@ -89,4 +94,7 @@ export const api = {
   post<RosterData>(`/roster/${month}/generate?leave_prob=${pl}&ch_prob=${ch}&org_holidays=${holidays}`),
   memberLeaves: (id: string) => post<LeaveResult>(`/members/${id}/leave-now`),
   memberBack: (id: string) => post<{ status: string }>(`/members/${id}/back`),
+  transfer: (id: string, member_id: string, reason = '') =>
+  post<{ ticket: string; assigned_to: string; assigned_to_name: string }>(`/tickets/${id}/transfer`, { member_id, reason }),
+  escalate: (id: string) => post<{ ticket: string; l2_covered: boolean }>(`/tickets/${id}/escalate-l2`),
 }

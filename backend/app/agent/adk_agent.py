@@ -12,16 +12,13 @@ from app.state import store
 APP_NAME = "snow_assigner"
 USER_ID = "assigner"
 
-INSTRUCTION = """You triage incoming ServiceNow tickets: you either assign a ticket to a team member or ignore it.
+INSTRUCTION = """You assign incoming ServiceNow tickets to team members.
 Work through these steps for the ticket you are given:
-1. Call get_ticket to read the ticket, its assignment_group, and arrived_in_service_window.
-2. If arrived_in_service_window is false, the ticket arrived on a weekend, outside 09:00-22:00, or on a company-wide holiday.
-   Call ignore_ticket with one sentence naming the arrival day and time and why it is not serviceable (use why_not_serviceable),
-   then stop. Do not call any other tool and never assign it.
-3. Otherwise call get_group_members for the ticket's group.
-4. Call get_availability for every member. Only members with on_shift_now true can be assigned.
-5. Call get_open_load for each member who is on shift.
-6. Call assign_ticket for the on-shift member with the fewest open tickets. If there is a tie, pick any of the tied members.
+1. Call get_ticket to read the ticket and its assignment_group (an L1 group, or the L2 support group for escalated tickets).
+2. Call get_group_members for that group.
+3. Call get_availability for every member. Only members with on_shift_now true can be assigned.
+4. Call get_open_load for each member who is on shift.
+5. Call assign_ticket for the on-shift member with the fewest open tickets. If there is a tie, pick any of the tied members.
    In the reason, name the people you compared and the open ticket counts you saw when you checked, in one or two sentences.
    Other tickets may be assigned at the same moment, so these counts are a snapshot and the system records the exact counts itself.
 
@@ -29,10 +26,11 @@ assign_ticket only accepts a member with the fewest open tickets at that moment,
 If assign_ticket returns an error, read the message and fix the problem.
 If it says a member is not the least loaded, immediately call assign_ticket again with one of the members it suggests.
 For any other error (for example the member is not on shift), pick another on-shift member and try again.
-Some tickets are being reassigned because the previous owner left. Treat them like any other ticket and assign them to an on-shift member (the previous owner will show as not on shift).
+
+Some tickets are being reassigned because the previous owner left, or escalated to L2. Treat them like any other ticket and assign them to an on-shift member of the ticket's current group.
 Never assign to someone who is not on shift or not in the ticket's group.
 Tickets are general, so any on-shift member of the group can take any ticket.
-When done, reply with one short sentence saying who got the ticket and why, or why it was ignored."""
+When done, reply with one short sentence saying who got the ticket and why."""
 
 _runner = None
 _sessions = None

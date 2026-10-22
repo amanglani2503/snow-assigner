@@ -52,7 +52,7 @@ export default function App() {
     ? [
         ['Total', metrics.total],
         ['Assigned', metrics.assigned],
-        ['Ignored', metrics.ignored],
+        ['Queued', metrics.queued],
         ['Breached', metrics.breached],
         ['Within 30 min', metrics.within_sla_pct === null ? '-' : metrics.within_sla_pct + '%'],
         ['Avg assign time', metrics.avg_seconds_to_assign === null ? '-' : metrics.avg_seconds_to_assign + 's'],
@@ -107,7 +107,7 @@ export default function App() {
             <button className={tab === 'roster' ? 'active' : ''} onClick={() => setTab('roster')}>Roster</button>
             <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>Log and agent activity</button>
           </nav>
-          {tab === 'board' && <Board tickets={tickets} />}
+          {tab === 'board' && <Board tickets={tickets} metrics={metrics} onChange={refresh} />}
           {tab === 'roster' && <Roster clock={clock} />}
           {tab === 'log' && <Insights audit={audit} metrics={metrics} onChange={refresh} />}
         </main>

@@ -40,7 +40,7 @@ class ServiceNowClient:
     async def list_unassigned(self, group: str) -> list[dict]:
         rows = await self._request("GET", "api/now/table/incident", params={
             "sysparm_query": f"assignment_group={group}^assigned_toISEMPTY"})
-        return [r for r in rows if r.get("u_in_service_hours")]   # out-of-hours tickets are ignored
+        return [r for r in rows if not r.get("u_queued")]
 
     async def get_group_members(self, group: str) -> list[dict]:
         rows = await self._request("GET", "api/now/table/sys_user_grmember",
@@ -57,10 +57,3 @@ class ServiceNowClient:
     async def list_assigned_to(self, member_id: str) -> list[dict]:
         return await self._request("GET", "api/now/table/incident", params={
             "sysparm_query": f"assigned_to={member_id}", "sysparm_limit": 1000})
-
-    async def ignore(self, sys_id: str, work_notes: str = "", actor: str = "agent") -> dict:
-        return await self._request(
-            "PATCH", f"api/now/table/incident/{sys_id}",
-            json={"u_ignore": True, "work_notes": work_notes},
-            headers={"X-Actor": actor},
-        )

@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: system-ui, Segoe UI, Arial, sans-serif; background: #f3f5f9; color: #1d2433; }
-.app { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.app { max-width: 1600px; margin: 0 auto; padding: 16px; }
 header { display: flex; justify-content: space-between; align-items: center; }
 h1 { margin: 0; font-size: 22px; }
 h2 { margin: 0 0 10px; font-size: 16px; }
@@ -100,3 +100,20 @@ table.roster th.holiday { background: #fff3bf; }
 .loadaction { width: 110px; text-align: right; }
 button.small { padding: 3px 8px; font-size: 12px; }
 button.warn { background: #e8590c; }
+.badge.QUEUED { background: #e7f5ff; color: #1971c2; }
+.badge.RELEASED { background: #d3f9d8; color: #2b8a3e; }
+.badge.TRANSFERRED { background: #d0ebff; color: #1864ab; }
+.badge.ESCALATED_L2, .badge.L2 { background: #ffe8cc; color: #d9480f; }
+.badge.L2 { margin-left: 4px; }
+button.l2 { background: #d9480f; }
+/* .actions select { font-size: 12px; padding: 3px; } */
+.actions { display: flex; gap: 4px; align-items: center; }
+.actions select {
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
+  font-size: 12px;
+  padding: 3px;
+  text-overflow: ellipsis;
+}
+.actions { min-width: 340px; }

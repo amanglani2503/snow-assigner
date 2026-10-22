@@ -3,7 +3,7 @@ import logging
 
 from app import config
 from app.agent.assign import eligible_members
-from app.agent.engine import assign_one_by_rules, tick
+from app.agent.engine import assign_one_by_rules, release_due_tickets, tick
 from app.agent.tools import current_ticket
 
 log = logging.getLogger("snow-assigner")
@@ -16,7 +16,7 @@ async def _default_runner(ticket):
 
 
 async def assign_with_agent(store, ticket, runner_fn=None, timeout=None):
-    """Let the agent decide the ticket (assign or ignore). If it fails, decide by rules instead."""
+    """Let the agent assign the ticket. If it fails, assign by rules instead."""
     runner_fn = runner_fn or _default_runner
     timeout = timeout or config.AGENT_TIMEOUT_SECONDS
     store.in_flight.add(ticket.sys_id)
@@ -26,7 +26,7 @@ async def assign_with_agent(store, ticket, runner_fn=None, timeout=None):
         try:
             await asyncio.wait_for(runner_fn(ticket), timeout=timeout)
             if ticket.status == "PENDING":
-                problem = "agent did not assign or ignore the ticket"
+                problem = "agent did not assign the ticket"
         except asyncio.TimeoutError:
             problem = f"agent timed out after {timeout}s"
         except Exception as e:
@@ -34,19 +34,19 @@ async def assign_with_agent(store, ticket, runner_fn=None, timeout=None):
 
         if problem and ticket.status == "PENDING" and ticket.sys_id in store.tickets:
             store.log(store.clock.now(), ticket, "AGENT_FALLBACK",
-                      problem + "; deciding by rules", actor="agent")
+                      problem + "; assigning by rules", actor="agent")
             try:
                 assign_one_by_rules(store, ticket, actor="rules-fallback")
             except Exception:
-                log.exception("fallback failed for %s", ticket.number)
+                log.exception("fallback assignment failed for %s", ticket.number)
     finally:
         current_ticket.reset(token)
         store.in_flight.discard(ticket.sys_id)
 
 
 async def dispatch(store, runner_fn=None, max_concurrent=None):
-    """Called every few seconds. Rules mode: run tick(). Agent mode: start agent runs
-    for pending tickets, up to the concurrency limit. Returns the started tasks."""
+    """Called every few seconds. Rules mode: run tick(). Agent mode: release queued tickets
+    whose window has opened, then start agent runs for pending tickets, up to the concurrency limit."""
     if store.mode != "agent":
         tick(store)
         return []
@@ -54,6 +54,7 @@ async def dispatch(store, runner_fn=None, max_concurrent=None):
     limit = max_concurrent or config.AGENT_MAX_CONCURRENT
     now = store.clock.now()
     store.ensure_roster(now)
+    release_due_tickets(store, now)
     pending = sorted(
         (t for t in store.tickets.values()
          if t.status == "PENDING" and t.sys_id not in store.in_flight),
@@ -63,6 +64,8 @@ async def dispatch(store, runner_fn=None, max_concurrent=None):
     for t in pending:
         if len(store.in_flight) >= limit:
             break
+        if not eligible_members(t.assignment_group, now, store.members, store.roster):
+            continue    # nobody on shift: don't spend a model call, wait until someone's shift starts
         store.in_flight.add(t.sys_id)    # claimed now, so the next cycle won't start a second run
         task = asyncio.create_task(assign_with_agent(store, t, runner_fn))
         _background.add(task)

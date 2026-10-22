@@ -72,15 +72,19 @@ def test_nothing_random_unless_asked():
 
 # ---------- service calendar ----------
 
-def test_company_holiday_is_not_serviceable_and_tickets_are_ignored():
+def test_company_holiday_ticket_is_queued_until_the_next_service_day():
     s = store_with(3, org_holidays=1)
-    now = at(s, sorted(org_holiday_dates(s.roster, s.members))[0], 11)
+    holiday = sorted(org_holiday_dates(s.roster, s.members))[0]
+    now = at(s, holiday, 11)
     assert s.is_org_holiday(now) and not s.is_serviceable(now)
     t = simulate(s, "normal", count=1, group="IDAHO")["created"][0]
-    assert t.status == "IGNORED" and t.deadline is None
+    assert t.status == "QUEUED" and not t.in_service_hours
     assert "company holiday" in t.reason
+    assert t.release_at > now and s.is_serviceable(t.release_at) and t.release_at.hour == 9
     tick(s, now)
-    assert t.status == "IGNORED" and t.assigned_to is None
+    assert t.status == "QUEUED" and t.assigned_to is None
+    tick(s, t.release_at)
+    assert t.status == "ASSIGNED"
 
 
 def test_partial_ch_day_stays_serviceable_and_excludes_those_members():
@@ -132,7 +136,7 @@ def test_holiday_scenario_jumps_to_company_holiday_and_ignores():
     s = store_with(5, org_holidays=1)
     s.clock.set(dt(2026, 10, 1, 10))
     t = simulate(s, "holiday", group="EMP")["created"][0]
-    assert s.is_org_holiday(s.clock.now()) and t.status == "IGNORED"
+    assert s.is_org_holiday(s.clock.now()) and t.status == "QUEUED"
 
 
 def test_holiday_scenario_without_holidays_raises_and_keeps_clock():

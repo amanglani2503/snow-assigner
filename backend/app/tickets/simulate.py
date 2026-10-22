@@ -62,8 +62,8 @@ def simulate(store, scenario="normal", count=None, group=None, seed=None):
         nonlocal rejected
         if store.add_ticket(t):
             created.append(t)
-            if t.status == "IGNORED":
-                store.log(now, t, "IGNORED", t.reason)
+            if t.status == "QUEUED":
+                store.log(now, t, "QUEUED", t.reason)
         else:
             rejected += 1
 

@@ -6,9 +6,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from app.roster.generator import days_in_month, org_holiday_dates
 from app.agent.assign import code_for
-from app.agent.engine import AssignmentError, mark_member_unavailable, restore_member, tick
+from app.agent.engine import (
+    AssignmentError, escalate_to_l2, mark_member_unavailable, restore_member, tick, transfer_ticket,
+)
 from app.roster.generator import days_in_month, org_holiday_dates
 from app.roster.models import GROUPS
 from app.rules.shifts import is_on_shift
@@ -35,6 +36,13 @@ class ModeRequest(BaseModel):
 
 class LeaveRequest(BaseModel):
     reason: str = "left during shift"
+
+class TransferRequest(BaseModel):
+    member_id: str
+    reason: str = ""
+
+class EscalateRequest(BaseModel):
+    reason: str = ""
 
 # ---------- helpers ----------
 
@@ -150,12 +158,35 @@ async def list_tickets(
     items.sort(key=lambda t: (t.opened_at, t.number), reverse=True)
     return [ticket_view(t, names) for t in items[:limit]]
 
+@router.post("/tickets/{sys_id}/transfer")
+async def transfer(sys_id: str, body: TransferRequest):
+    """Hand an assigned ticket to another on-shift member of the same group."""
+    t = store.tickets.get(sys_id)
+    if t is None:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        m = transfer_ticket(store, t, body.member_id, store.clock.now(), body.reason, actor="user")
+    except AssignmentError as e:
+        raise HTTPException(400, str(e))
+    return {"ticket": t.number, "assigned_to": m.id, "assigned_to_name": m.name}
+
+
+@router.post("/tickets/{sys_id}/escalate-l2")
+async def escalate(sys_id: str, body: Optional[EscalateRequest] = None):
+    """Send an assigned ticket to second-level (L2) support."""
+    t = store.tickets.get(sys_id)
+    if t is None:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        return escalate_to_l2(store, t, store.clock.now(), body.reason if body else "", actor="user")
+    except AssignmentError as e:
+        raise HTTPException(400, str(e))
+
 
 @router.post("/tick")
 async def run_tick():
     """Run the assignment pass now (the background loop also does this every 3 seconds)."""
     return {"audit_added": tick(store)}
-
 
 @router.get("/roster/{month}")
 async def get_roster(month: str):
@@ -212,7 +243,7 @@ async def metrics():
         "total": len(tickets),
         "assigned": len(assigned),
         "pending": sum(t.status == "PENDING" for t in tickets),
-        "ignored": sum(t.status == "IGNORED" for t in tickets),
+        "queued": sum(t.status == "QUEUED" for t in tickets),
         "breached": sum(t.breached for t in tickets),
         "within_sla_pct": round(100 * len(ok) / len(assigned), 1) if assigned else None,
         "avg_seconds_to_assign": round(sum(waits) / len(waits), 1) if waits else None,

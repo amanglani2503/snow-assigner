@@ -131,7 +131,7 @@ def test_tool_calls_are_logged_with_ticket_context():
 
 
 def test_tools_are_adk_friendly():
-    assert len(ALL_TOOLS) == 7
+    assert len(ALL_TOOLS) == 6
     for f in ALL_TOOLS:
         sig = inspect.signature(f)
         assert inspect.iscoroutinefunction(f), f.__name__
