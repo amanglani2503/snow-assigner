@@ -105,16 +105,34 @@ class ServiceNowClient:
             except httpx.HTTPError as e:
                 raise SnowError(f"Failed to list member load: {str(e)}")
 
-    def _format_incident(self, r: dict) -> dict:
+    # def _format_incident(self, r: dict) -> dict:
+    #     def val(field):
+    #         return field.get("value", "") if isinstance(field, dict) else (field or "")
+    #
+    #     return {
+    #         "sys_id": val(r.get("sys_id")),
+    #         "number": val(r.get("number")),
+    #         "short_description": val(r.get("short_description")),
+    #         "priority": val(r.get("priority")),
+    #         "assignment_group": val(r.get("assignment_group")),
+    #         "opened_at": val(r.get("opened_at")),
+    #         "assigned_to": val(r.get("assigned_to")),
+    #         "u_sla_due": val(r.get("u_sla_due")),
+    #         "u_level": val(r.get("u_level", "L1")),
+    #     }
+
+    def _format_incident(r: dict) -> dict:
         def val(field):
-            return field.get("value", "") if isinstance(field, dict) else (field or "")
+            if isinstance(field, dict):
+                return field.get("display_value") or field.get("value", "") or ""
+            return field or ""
 
         return {
             "sys_id": val(r.get("sys_id")),
             "number": val(r.get("number")),
             "short_description": val(r.get("short_description")),
             "priority": val(r.get("priority")),
-            "assignment_group": val(r.get("assignment_group")),
+            "assignment_group": val(r.get("assignment_group")),  # Must match group name like "Network" or "IDAHO"
             "opened_at": val(r.get("opened_at")),
             "assigned_to": val(r.get("assigned_to")),
             "u_sla_due": val(r.get("u_sla_due")),
