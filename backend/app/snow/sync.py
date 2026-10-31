@@ -40,10 +40,12 @@ async def pull_unassigned_tickets_from_snow(store):
                     release_at=release_at,
                     level=r.get("u_level", "L1"),
                 )
-
-                # Add to local store so dispatcher/agent can process it
+                # Inside pull_unassigned_tickets_from_snow(store) in sync.py:
                 store.add_ticket(ticket)
-                store.log(now, ticket, "SYNCED_FROM_SNOW", f"Pulled unassigned ticket for {group_name}")
+
+                # Log the incident number explicitly to the audit trail / logs
+                store.log(now, ticket, "INCIDENT_ARRIVED",
+                          f"New ticket arrived from ServiceNow: {ticket.number} for group {group_name}")
 
         except SnowError as e:
             # Log error or handle connection drops gracefully

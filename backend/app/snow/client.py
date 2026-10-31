@@ -33,22 +33,6 @@ class ServiceNowClient:
             except httpx.HTTPError as e:
                 raise SnowError(f"ServiceNow API error: {str(e)}")
 
-    async def list_unassigned_tickets(self, group_name: str) -> list:
-        """Fetch unassigned active tickets for a specific group from ServiceNow."""
-        query = f"assignment_group.name={group_name}^active=true^assigned_toISEMPTY"
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                response = await client.get(
-                    f"{self.base_url}api/now/table/incident",
-                    params={"sysparm_query": query, "sysparm_limit": 100},
-                    headers=self.headers
-                )
-                response.raise_for_status()
-                results = response.json().get("result", [])
-                return [self._format_incident(inc) for inc in results]
-            except httpx.HTTPError as e:
-                raise SnowError(f"Failed to list unassigned tickets: {str(e)}")
-
     async def assign(self, sys_id: str, member_id: str, work_notes: str = "", actor: str = "agent") -> dict:
         """Make an actual PATCH call to ServiceNow to assign the ticket in production."""
         payload = {
@@ -105,23 +89,30 @@ class ServiceNowClient:
             except httpx.HTTPError as e:
                 raise SnowError(f"Failed to list member load: {str(e)}")
 
-    # def _format_incident(self, r: dict) -> dict:
-    #     def val(field):
-    #         return field.get("value", "") if isinstance(field, dict) else (field or "")
-    #
-    #     return {
-    #         "sys_id": val(r.get("sys_id")),
-    #         "number": val(r.get("number")),
-    #         "short_description": val(r.get("short_description")),
-    #         "priority": val(r.get("priority")),
-    #         "assignment_group": val(r.get("assignment_group")),
-    #         "opened_at": val(r.get("opened_at")),
-    #         "assigned_to": val(r.get("assigned_to")),
-    #         "u_sla_due": val(r.get("u_sla_due")),
-    #         "u_level": val(r.get("u_level", "L1")),
-    #     }
+    async def list_unassigned_tickets(self, group_name: str) -> list:
+        """Fetch unassigned active tickets for a specific group from ServiceNow using dot-walking."""
+        # Use assignment_group.name so ServiceNow resolves the group name to its sys_id automatically
+        query = f"assignment_group.name={group_name}^active=true^assigned_toISEMPTY"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident",
+                    params={
+                        "sysparm_query": query,
+                        "sysparm_limit": 100,
+                        "sysparm_display_value": "true"  # Tells ServiceNow to return display names for references
+                    },
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                results = response.json().get("result", [])
+                return [self._format_incident(inc) for inc in results]
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to list unassigned tickets: {str(e)}")
 
-    def _format_incident(r: dict) -> dict:
+    def _format_incident(self, r: dict) -> dict:
+        """Robustly extract string values whether fields are raw strings or ServiceNow reference dicts."""
+
         def val(field):
             if isinstance(field, dict):
                 return field.get("display_value") or field.get("value", "") or ""
@@ -132,7 +123,7 @@ class ServiceNowClient:
             "number": val(r.get("number")),
             "short_description": val(r.get("short_description")),
             "priority": val(r.get("priority")),
-            "assignment_group": val(r.get("assignment_group")),  # Must match group name like "Network" or "IDAHO"
+            "assignment_group": val(r.get("assignment_group")),
             "opened_at": val(r.get("opened_at")),
             "assigned_to": val(r.get("assigned_to")),
             "u_sla_due": val(r.get("u_sla_due")),
