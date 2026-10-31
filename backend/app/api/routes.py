@@ -91,6 +91,22 @@ def roster_view(month: str) -> dict:
     }
 
 
+def get_wait_seconds(t):
+    if not t.assigned_at or not t.opened_at:
+        return None
+
+    opened = t.opened_at
+    assigned = t.assigned_at
+
+    # If one has tzinfo and the other doesn't, normalize both to naive (or aware UTC)
+    if opened.tzinfo is not None and assigned.tzinfo is None:
+        opened = opened.replace(tzinfo=None)
+    elif opened.tzinfo is None and assigned.tzinfo is not None:
+        assigned = assigned.replace(tzinfo=None)
+
+    return (assigned - opened).total_seconds()
+
+
 # ---------- routes ----------
 
 @router.get("/health")
@@ -235,7 +251,7 @@ async def metrics():
     tickets = list(store.tickets.values())
     assigned = [t for t in tickets if t.status == "ASSIGNED"]
     ok = [t for t in assigned if not t.breached]
-    waits = [(t.assigned_at - t.opened_at).total_seconds() for t in assigned]
+    waits = [get_wait_seconds(t) for t in assigned if get_wait_seconds(t) is not None]
     load = store.load()
     now = store.clock.now()
     store.ensure_roster(now)
