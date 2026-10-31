@@ -49,8 +49,11 @@ class ServiceNowClient:
                     headers=headers
                 )
                 if response.status_code >= 400:
-                    err_msg = response.json().get("error", {}).get("message", response.text)
-                    raise SnowError(err_msg)
+                    try:
+                        err = response.json().get("error", {})
+                    except ValueError:
+                        err = {}
+                    raise SnowError(f"{err.get('message', '')} {err.get('detail', '')}".strip() or response.text)
                 return self._format_incident(response.json().get("result", {}))
             except httpx.HTTPError as e:
                 raise SnowError(f"Failed to assign ticket in ServiceNow: {str(e)}")
@@ -60,21 +63,34 @@ class ServiceNowClient:
             try:
                 response = await client.get(
                     f"{self.base_url}api/now/table/sys_user_grmember",
-                    params={"sysparm_query": f"group.name={group}", "sysparm_display_value": "all"},
-                    headers=self.headers
-                )
+                    params={"sysparm_query": f"group.name={group}^user.active=true",
+                            "sysparm_display_value": "all", "sysparm_limit": 200},
+                    headers=self.headers)
                 response.raise_for_status()
-                rows = response.json().get("result", [])
-                members = []
-                for r in rows:
-                    user_info = r.get("user", {})
-                    members.append({
-                        "id": user_info.get("value"),
-                        "name": user_info.get("display_value")
-                    })
-                return members
+                return [{"id": (r.get("user") or {}).get("value"),
+                         "name": (r.get("user") or {}).get("display_value")}
+                        for r in response.json().get("result", [])]
             except httpx.HTTPError as e:
-                raise SnowError(f"Failed to fetch group members: {str(e)}")
+                raise SnowError(f"Failed to fetch group members: {e}")
+
+    async def list_active_for_group(self, group: str) -> list:
+        """Raw values: datetimes come back as UTC, references as sys_ids."""
+        query = f"assignment_group.name={group}^active=true"
+        if config.SNOW_EXTRA_QUERY:
+            query += "^" + config.SNOW_EXTRA_QUERY
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident",
+                    params={"sysparm_query": query + "^ORDERBYopened_at", "sysparm_limit": 500,
+                            "sysparm_fields": "sys_id,number,short_description,priority,opened_at,assigned_to",
+                            "sysparm_exclude_reference_link": "true",
+                            "sysparm_display_value": "false"},
+                    headers=self.headers)
+                response.raise_for_status()
+                return response.json().get("result", [])
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to list tickets for {group}: {e}")
 
     async def list_assigned_to(self, member_id: str) -> list:
         async with httpx.AsyncClient(timeout=30.0) as client:

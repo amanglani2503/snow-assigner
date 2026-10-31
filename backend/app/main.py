@@ -12,21 +12,39 @@ from app.agent.dispatcher import dispatch
 from app.api.routes import router
 from app.snow.mock_api import router as mock_snow_router
 from app.state import store
-from app.snow.sync import pull_unassigned_tickets_from_snow
+import time
+from app import config
+from app.snow.sync import sync_members, sync_tickets, flush_outbox
 
 log = logging.getLogger("snow-assigner")
 TICK_SECONDS = 60
 
 async def _assign_loop():
+    last_members = last_tickets = 0.0
     while True:
+        t = time.monotonic()
+        if config.SNOW_LIVE:
+            if t - last_members > config.MEMBERS_SYNC_SECONDS or not store.members:
+                last_members = t
+                try:
+                    await sync_members(store)
+                except Exception:
+                    log.exception("member sync failed")
+            if t - last_tickets > config.SYNC_SECONDS:
+                last_tickets = t
+                try:
+                    await sync_tickets(store)
+                except Exception:
+                    log.exception("ticket sync failed")
         try:
-            # 1. Pull new unassigned tickets from real ServiceNow
-            await pull_unassigned_tickets_from_snow(store)
-
-            # 2. Dispatch/assign pending tickets using rules or Gemini agent
             await dispatch(store)
         except Exception:
-            log.exception("dispatch or sync failed")
+            log.exception("dispatch failed")
+        if config.SNOW_LIVE:
+            try:
+                await flush_outbox(store)
+            except Exception:
+                log.exception("outbox flush failed")
         await asyncio.sleep(3)
 
 @asynccontextmanager

@@ -10,6 +10,11 @@ def snow_auth():
     user, pwd = os.getenv("SNOW_USER"), os.getenv("SNOW_PASSWORD")
     return (user, pwd) if user and pwd else None
 
+SNOW_LIVE = snow_auth() is not None          # real instance when credentials are set
+SNOW_GROUPS = [g.strip() for g in os.getenv("SNOW_GROUPS", "Network").split(",") if g.strip()]
+SYNC_SECONDS = int(os.getenv("SYNC_SECONDS", "15"))
+MEMBERS_SYNC_SECONDS = int(os.getenv("MEMBERS_SYNC_SECONDS", "300"))
+SNOW_EXTRA_QUERY = os.getenv("SNOW_EXTRA_QUERY", "")   # e.g. "opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()"
 
 # --- Gemini / ADK (Vertex AI) ---
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")

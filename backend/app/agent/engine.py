@@ -2,7 +2,7 @@ from app.agent.assign import code_for, eligible_members, pick_least_loaded
 from app.roster.models import L2_GROUP
 from app.rules.clock import IST
 from app.rules.shifts import is_on_shift
-
+from app import config
 
 class AssignmentError(ValueError):
     pass
@@ -93,6 +93,9 @@ def assign_to_member(store, ticket, member_id, now, reason, actor="rules"):
             store.log(now, ticket, "BREACHED", f"Assigned after deadline {ticket.deadline:%a %d %b %H:%M}", actor)
     store.log(now, ticket, "REASSIGNED" if reassigning else "ASSIGNED",
               f"{member.name} ({member.id}): {ticket.reason}", actor)
+    if config.SNOW_LIVE:
+        store.outbox.append({"sys_id": ticket.sys_id, "member_id": member.id,
+                             "note": ticket.reason, "attempts": 0})
     return member
 
 
@@ -174,6 +177,9 @@ def transfer_ticket(store, ticket, member_id, now, reason="", actor="user"):
     note = f"Transferred from {_name(store, old)} to {member.name}" + (f": {reason}" if reason else "")
     ticket.reason = note
     store.log(now, ticket, "TRANSFERRED", f"{note} (by {actor})", actor)
+    if config.SNOW_LIVE:
+        store.outbox.append({"sys_id": ticket.sys_id, "member_id": member.id,
+                             "note": ticket.reason, "attempts": 0})
     return member
 
 

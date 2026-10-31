@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+from app import config
 
 @dataclass(frozen=True)
 class Member:
@@ -9,8 +9,8 @@ class Member:
     skills: tuple = ()
     location: str = "Noida"
 
-
-GROUPS = ["IDAHO", "EMP", "DBE", "DB-LEGI1", "DB-LEGI2", "NGA", "Network"]
+GROUPS = config.SNOW_GROUPS if config.SNOW_LIVE else \
+    ["IDAHO", "EMP", "DBE", "DB-LEGI1", "DB-LEGI2", "NGA", "Network"]
 L2_GROUP = "L2-SUPPORT"
 
 # Mock locations. Location-wide company holidays (CH) are only applied on days when every
