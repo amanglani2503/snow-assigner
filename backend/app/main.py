@@ -12,19 +12,22 @@ from app.agent.dispatcher import dispatch
 from app.api.routes import router
 from app.snow.mock_api import router as mock_snow_router
 from app.state import store
+from app.snow.sync import pull_unassigned_tickets_from_snow
 
 log = logging.getLogger("snow-assigner")
-TICK_SECONDS = 3
-
+TICK_SECONDS = 60
 
 async def _assign_loop():
     while True:
         try:
+            # 1. Pull new unassigned tickets from real ServiceNow
+            await pull_unassigned_tickets_from_snow(store)
+
+            # 2. Dispatch/assign pending tickets using rules or Gemini agent
             await dispatch(store)
         except Exception:
-            log.exception("dispatch failed")
-        await asyncio.sleep(TICK_SECONDS)
-
+            log.exception("dispatch or sync failed")
+        await asyncio.sleep(3)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

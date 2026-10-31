@@ -1,59 +1,122 @@
+import base64
 import httpx
-
 from app import config
 
 
 class SnowError(Exception):
-    def __init__(self, message: str, status: int = 0):
-        super().__init__(message)
-        self.status = status
+    pass
 
 
 class ServiceNowClient:
-    """Async ServiceNow Table API client. Same code for the mock and a real instance:
-    only base_url and credentials differ."""
-
-    def __init__(self, base_url=None, auth=None, transport=None, timeout=10.0):
-        self._kw = {
-            "base_url": (base_url or config.SNOW_BASE_URL).rstrip("/") + "/",
-            "auth": auth or config.snow_auth(),
-            "transport": transport,          # tests pass an in-process ASGI transport
-            "timeout": timeout,
-            "headers": {"Accept": "application/json"},
+    def __init__(self):
+        self.base_url = config.SNOW_BASE_URL.rstrip("/") + "/"
+        auth = config.snow_auth()
+        self.headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
         }
-
-    async def _request(self, method: str, path: str, **kw):
-        async with httpx.AsyncClient(**self._kw) as c:
-            r = await c.request(method, path, **kw)
-        if r.status_code >= 400:
-            try:
-                body = r.json()["error"]
-                msg = body["message"] + (f": {body['detail']}" if body.get("detail") else "")
-            except Exception:
-                msg = r.text
-            raise SnowError(msg, r.status_code)
-        return r.json()["result"]
+        if auth:
+            token = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+            self.headers["Authorization"] = f"Basic {token}"
 
     async def get_incident(self, sys_id: str) -> dict:
-        return await self._request("GET", f"api/now/table/incident/{sys_id}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident/{sys_id}",
+                    headers=self.headers
+                )
+                if response.status_code == 404:
+                    raise SnowError(f"Incident {sys_id} not found in ServiceNow")
+                response.raise_for_status()
+                return self._format_incident(response.json().get("result", {}))
+            except httpx.HTTPError as e:
+                raise SnowError(f"ServiceNow API error: {str(e)}")
 
-    async def list_unassigned(self, group: str) -> list[dict]:
-        rows = await self._request("GET", "api/now/table/incident", params={
-            "sysparm_query": f"assignment_group={group}^assigned_toISEMPTY"})
-        return [r for r in rows if not r.get("u_queued")]
-
-    async def get_group_members(self, group: str) -> list[dict]:
-        rows = await self._request("GET", "api/now/table/sys_user_grmember",
-                                   params={"sysparm_query": f"group={group}"})
-        return [{"id": r["user"]["value"], "name": r["user"]["display_value"]} for r in rows]
+    async def list_unassigned_tickets(self, group_name: str) -> list:
+        """Fetch unassigned active tickets for a specific group from ServiceNow."""
+        query = f"assignment_group.name={group_name}^active=true^assigned_toISEMPTY"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident",
+                    params={"sysparm_query": query, "sysparm_limit": 100},
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                results = response.json().get("result", [])
+                return [self._format_incident(inc) for inc in results]
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to list unassigned tickets: {str(e)}")
 
     async def assign(self, sys_id: str, member_id: str, work_notes: str = "", actor: str = "agent") -> dict:
-        return await self._request(
-            "PATCH", f"api/now/table/incident/{sys_id}",
-            json={"assigned_to": member_id, "work_notes": work_notes},
-            headers={"X-Actor": actor},
-        )
+        """Make an actual PATCH call to ServiceNow to assign the ticket in production."""
+        payload = {
+            "assigned_to": member_id,
+            "work_notes": work_notes,
+            "state": "2"  # 2 = In Progress / Assigned in ServiceNow
+        }
+        headers = {**self.headers, "X-Actor": actor}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.patch(
+                    f"{self.base_url}api/now/table/incident/{sys_id}",
+                    json=payload,
+                    headers=headers
+                )
+                if response.status_code >= 400:
+                    err_msg = response.json().get("error", {}).get("message", response.text)
+                    raise SnowError(err_msg)
+                return self._format_incident(response.json().get("result", {}))
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to assign ticket in ServiceNow: {str(e)}")
 
-    async def list_assigned_to(self, member_id: str) -> list[dict]:
-        return await self._request("GET", "api/now/table/incident", params={
-            "sysparm_query": f"assigned_to={member_id}", "sysparm_limit": 1000})
+    async def get_group_members(self, group: str) -> list:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/sys_user_grmember",
+                    params={"sysparm_query": f"group.name={group}", "sysparm_display_value": "all"},
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                rows = response.json().get("result", [])
+                members = []
+                for r in rows:
+                    user_info = r.get("user", {})
+                    members.append({
+                        "id": user_info.get("value"),
+                        "name": user_info.get("display_value")
+                    })
+                return members
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to fetch group members: {str(e)}")
+
+    async def list_assigned_to(self, member_id: str) -> list:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident",
+                    params={"sysparm_query": f"assigned_to={member_id}^active=true"},
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                return response.json().get("result", [])
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to list member load: {str(e)}")
+
+    def _format_incident(self, r: dict) -> dict:
+        def val(field):
+            return field.get("value", "") if isinstance(field, dict) else (field or "")
+
+        return {
+            "sys_id": val(r.get("sys_id")),
+            "number": val(r.get("number")),
+            "short_description": val(r.get("short_description")),
+            "priority": val(r.get("priority")),
+            "assignment_group": val(r.get("assignment_group")),
+            "opened_at": val(r.get("opened_at")),
+            "assigned_to": val(r.get("assigned_to")),
+            "u_sla_due": val(r.get("u_sla_due")),
+            "u_level": val(r.get("u_level", "L1")),
+        }
