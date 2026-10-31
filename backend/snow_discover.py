@@ -84,6 +84,25 @@ def count_open_unassigned(snow, group_sys_id):
     except (SnowError, KeyError, ValueError, TypeError):
         return None
 
+def find_states(snow):
+    """Incident state values. Prefer the official choice list. If the user cannot read it (403),
+    read the distinct states from a sample of recent incidents instead."""
+    try:
+        choices = snow.get_all("api/now/table/sys_choice",
+                               sysparm_query="name=incident^element=state^inactive=false",
+                               sysparm_fields="value,label")
+        return [{"value": val(c["value"]), "label": val(c["label"])} for c in choices], "sys_choice"
+    except SnowError:
+        pass
+    try:
+        rows = snow.get("api/now/table/incident", sysparm_limit=200, sysparm_fields="state",
+                        sysparm_display_value="all").get("result", [])
+    except SnowError:
+        return [], "unavailable"
+    seen = {}
+    for r in rows:
+        seen[val(r.get("state"))] = shown(r.get("state"))
+    return [{"value": v, "label": l} for v, l in sorted(seen.items()) if v], "incident sample"
 
 def discover(snow, group_names):
     result = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -116,9 +135,7 @@ def discover(snow, group_names):
                     "group": name, "sys_user_id": val(u["sys_id"]), "user_name": val(u.get("user_name")),
                     "name": shown(u.get("name")), "email": val(u.get("email"))})
 
-    choices = snow.get_all("api/now/table/sys_choice", sysparm_query="name=incident^element=state^inactive=false",
-                           sysparm_fields="value,label")
-    result["states"] = [{"value": val(c["value"]), "label": val(c["label"])} for c in choices]
+    result["states"], result["states_source"] = find_states(snow)
     return result
 
 
@@ -133,7 +150,12 @@ def summary(result, show_members=False):
             lines += [f"      {m['name']} ({m['user_name']})" for m in result["members"] if m["group"] == name]
     if result["missing_groups"]:
         lines += ["", "NOT FOUND (check the exact group name): " + ", ".join(result["missing_groups"])]
-    lines += ["", "Incident states: " + ", ".join(f"{s['value']}={s['label']}" for s in result["states"])]
+    if result["states"]:
+        src = result.get("states_source", "")
+        note = " (from a sample of recent incidents, so rare states may be missing)" if src == "incident sample" else ""
+        lines += ["", "Incident states: " + ", ".join(f"{s['value']}={s['label']}" for s in result["states"]) + note]
+    else:
+        lines += ["", "Incident states: could not be read (ask your admin for read access to sys_choice)"]
     return "\n".join(lines)
 
 
