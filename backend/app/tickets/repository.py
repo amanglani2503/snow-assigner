@@ -1,6 +1,6 @@
 from collections import Counter
 from datetime import datetime, timedelta
-
+from app import config
 from app.roster.generator import generate_roster
 from app.roster.models import MEMBERS
 from app.rules.clock import IST, Clock
@@ -24,21 +24,33 @@ class Store:
         self.absence_originals = {}   # (member_id, day) -> roster code before they left
         self._seq = 0
         self._numbers = 0
+        self.outbox = []
+
+    def set_members(self, members):
+        self.members = list(members)
 
     # ---- roster ----
-    def load_roster(self, month, leave_prob=0.0, seed=42, ch_prob=0.0, org_holidays=0):
+    def load_roster(self, month, leave_prob=0.0, seed=42, ch_prob=0.0,
+                    org_holidays=0, only_missing=False):
         roster = generate_roster(month, self.members, leave_prob, seed, ch_prob, org_holidays)
+        key = f"{month}-01"
         for mid, days in roster.items():
+            if only_missing and key in self.roster.get(mid, {}):
+                continue         # never overwrite existing days (UL overrides)
             self.roster.setdefault(mid, {}).update(days)
 
     def ensure_roster(self, when):
+        if not self.members:
+            return
         month = when.astimezone(IST).strftime("%Y-%m")
-        first_member = self.members[0].id
-        if f"{month}-01" not in self.roster.get(first_member, {}):
-            self.load_roster(month)
+        key = f"{month}-01"
+        if any(key not in self.roster.get(m.id, {}) for m in self.members):
+            self.load_roster(month, only_missing=True)
 
     # ---- service calendar ----
     def is_org_holiday(self, when) -> bool:
+        if not self.members:
+            return False
         """True when every member is on company holiday (CH) that day."""
         self.ensure_roster(when)
         day = when.astimezone(IST).date().isoformat()

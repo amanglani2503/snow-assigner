@@ -2,26 +2,15 @@ from contextvars import ContextVar
 
 from app.agent.assign import code_for
 from app.rules.shifts import SHIFT_HOURS, is_on_shift
-from app.snow.client import ServiceNowClient, SnowError
 from app.state import store
+from app.agent.engine import AssignmentError, assign_to_member
+
 
 # The agent loop sets this to the ticket number being worked on, so tool calls
 # in the audit log can be tied to a ticket.
 current_ticket: ContextVar[str] = ContextVar("current_ticket", default="-")
 
 _client = None
-
-
-def get_client() -> ServiceNowClient:
-    global _client
-    if _client is None:
-        _client = ServiceNowClient()
-    return _client
-
-
-def set_client(client) -> None:
-    global _client
-    _client = client
 
 
 def _done(tool: str, args: dict, result: dict) -> dict:
@@ -50,40 +39,21 @@ async def get_current_time() -> dict:
 
 
 async def get_ticket(sys_id: str) -> dict:
-    """Look up an incident in ServiceNow.
-
-    Args:
-        sys_id: The ServiceNow sys_id of the incident.
-
-    Returns:
-        dict with the ticket's number, description, priority, assignment_group (an L1 group
-        or the L2 support group), level, opened_at, assigned_to (empty if unassigned) and sla_due.
-    """
-    try:
-        r = await get_client().get_incident(sys_id)
-    except SnowError as e:
-        return _done("get_ticket", {"sys_id": sys_id}, _error(str(e)))
-    keep = ("sys_id", "number", "short_description", "priority",
-            "assignment_group", "opened_at", "assigned_to")
-    ticket = {k: r[k] for k in keep}
-    ticket["sla_due"] = r["u_sla_due"]
-    ticket["level"] = r["u_level"]
-    return _done("get_ticket", {"sys_id": sys_id}, {"status": "success", "ticket": ticket})
+    """Look up an incident. Returns number, short_description, priority,
+    assignment_group, opened_at, assigned_to, sla_due and level."""
+    t = store.tickets.get(sys_id)
+    if t is None:
+        return _done("get_ticket", {"sys_id": sys_id}, _error(f"Incident {sys_id} not found"))
+    return _done("get_ticket", {"sys_id": sys_id}, {"status": "success", "ticket": {
+        "sys_id": t.sys_id, "number": t.number, "short_description": t.short_description,
+        "priority": t.priority, "assignment_group": t.assignment_group,
+        "opened_at": t.opened_at.isoformat(), "assigned_to": t.assigned_to or "",
+        "sla_due": t.deadline.isoformat() if t.deadline else "", "level": t.level}})
 
 
 async def get_group_members(group: str) -> dict:
-    """List the members of a ServiceNow assignment group.
-
-    Args:
-        group: The assignment group name, for example IDAHO, EMP, DBE, DB-LEGI1, DB-LEGI2 or NGA.
-
-    Returns:
-        dict with members, a list of objects with id and name.
-    """
-    try:
-        members = await get_client().get_group_members(group)
-    except SnowError as e:
-        return _done("get_group_members", {"group": group}, _error(str(e)))
+    """List the members of an assignment group (id and name)."""
+    members = [{"id": m.id, "name": m.name} for m in store.members if m.group == group]
     if not members:
         return _done("get_group_members", {"group": group}, _error(f"No members found for group {group}"))
     return _done("get_group_members", {"group": group},
@@ -117,42 +87,30 @@ async def get_availability(member_id: str) -> dict:
 
 
 async def get_open_load(member_id: str) -> dict:
-    """Count the open tickets currently assigned to a member in ServiceNow.
-
-    Args:
-        member_id: The member id, for example idaho-1.
-
-    Returns:
-        dict with open_tickets, the number of tickets assigned to this member.
-    """
-    try:
-        rows = await get_client().list_assigned_to(member_id)
-    except SnowError as e:
-        return _done("get_open_load", {"member_id": member_id}, _error(str(e)))
-    return _done("get_open_load", {"member_id": member_id},
-                 {"status": "success", "member_id": member_id, "open_tickets": len(rows)})
+    """Count the open tickets currently assigned to a member."""
+    return _done("get_open_load", {"member_id": member_id}, {
+        "status": "success", "member_id": member_id,
+        "open_tickets": store.load().get(member_id, 0)})
 
 
 async def assign_ticket(sys_id: str, member_id: str, reason: str) -> dict:
-    """Assign a ticket to a member by updating assigned_to in ServiceNow.
-    This is rejected if the ticket is queued or already assigned,
-    or if the member is not in the ticket's group or not on shift right now.
+    """Assign a ticket to a member. Rejected if the ticket is queued or already assigned,
+    or the member is not in the group, not on shift, or not the least loaded.
 
     Args:
-        sys_id: The ServiceNow sys_id of the incident.
-        member_id: The member id to assign to, for example idaho-1.
-        reason: One or two sentences explaining why this member was chosen.
-
-    Returns:
-        dict with status success and the assigned member, or status error with the rejection message.
+        sys_id: The incident sys_id.
+        member_id: The member id to assign to.
+        reason: One or two sentences explaining the choice.
     """
     args = {"sys_id": sys_id, "member_id": member_id}
+    t = store.tickets.get(sys_id)
+    if t is None:
+        return _done("assign_ticket", args, _error(f"Incident {sys_id} not found"))
     try:
-        r = await get_client().assign(sys_id, member_id, work_notes=reason, actor="agent")
-    except SnowError as e:
+        m = assign_to_member(store, t, member_id, store.clock.now(), reason, actor="agent")
+    except AssignmentError as e:
         return _done("assign_ticket", args, _error(str(e)))
-    return _done("assign_ticket", args, {
-        "status": "success", "number": r["number"], "assigned_to": r["assigned_to"]})
+    return _done("assign_ticket", args, {"status": "success", "number": t.number, "assigned_to": m.id})
 
 
 ALL_TOOLS = [get_current_time, get_ticket, get_group_members,
