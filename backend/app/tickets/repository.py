@@ -1,5 +1,7 @@
+import json
 from collections import Counter
 from datetime import datetime, timedelta
+from pathlib import Path
 from app import config
 from app.roster.generator import generate_roster
 from app.roster.models import MEMBERS
@@ -114,3 +116,27 @@ class Store:
 
     def reset(self):
         self._init_state()
+
+    def ensure_roster(self, when):
+        if config.SNOW_LIVE or not self.members:      # live mode: the rota comes only from Excel
+            return
+        ...                                           # existing mock-mode code
+
+    def apply_roster(self, month, data):
+        for mid, days in data.items():
+            self.roster.setdefault(mid, {}).update(days)
+        for key in [k for k in self.absence_originals if k[1].startswith(month)]:
+            del self.absence_originals[key]           # an upload replaces "left during shift" overrides
+        self.save_roster_file()
+
+    def save_roster_file(self):
+        if not config.ROSTER_FILE:
+            return
+        p = Path(config.ROSTER_FILE)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(self.roster))
+
+    def load_roster_file(self):
+        p = Path(config.ROSTER_FILE) if config.ROSTER_FILE else None
+        if p and p.is_file():
+            self.roster = json.loads(p.read_text())

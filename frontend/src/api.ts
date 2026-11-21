@@ -66,6 +66,7 @@ export interface SimResult {
   clock: string
 }
 
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -97,4 +98,12 @@ export const api = {
   transfer: (id: string, member_id: string, reason = '') =>
   post<{ ticket: string; assigned_to: string; assigned_to_name: string }>(`/tickets/${id}/transfer`, { member_id, reason }),
   escalate: (id: string) => post<{ ticket: string; l2_covered: boolean }>(`/tickets/${id}/escalate-l2`),
+  rosterTemplateUrl: (month: string) => `/api/roster/${month}/template`,
+  uploadRoster: async (month: string, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    const r = await fetch(`/api/roster/${month}/upload`, { method: 'POST', body: fd })
+    if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail ?? `${r.status}`)
+    return r.json() as Promise<{ ok: boolean; members_updated: number; warnings: string[] }>
+  },
 }
+
