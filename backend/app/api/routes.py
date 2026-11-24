@@ -1,3 +1,4 @@
+import io
 import re
 import random
 from dataclasses import asdict
@@ -6,6 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from app import config
 from app.agent.assign import code_for
 from app.agent.engine import (
     AssignmentError, escalate_to_l2, mark_member_unavailable, restore_member, tick, transfer_ticket,
@@ -16,6 +19,9 @@ from app.rules.shifts import is_on_shift
 from app.rules.sla import is_serviceable
 from app.state import store
 from app.tickets.simulate import SCENARIOS, simulate
+from fastapi import UploadFile, File
+from fastapi.responses import StreamingResponse
+from app.roster.excel import build_template, parse_template
 
 router = APIRouter()
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -208,7 +214,7 @@ async def run_tick():
 async def get_roster(month: str):
     check_month(month)
     first = store.members[0].id
-    if f"{month}-01" not in store.roster.get(first, {}):
+    if not config.SNOW_LIVE and store.members and f"{month}-01" not in store.roster.get(first, {}):
         store.load_roster(month)
     return roster_view(month)
 
@@ -221,6 +227,7 @@ async def generate_roster_route(
     org_holidays: int = Query(0, ge=0, le=5, description="company-wide holidays in the month"),
     seed: Optional[int] = None,
 ):
+    if config.SNOW_LIVE: raise HTTPException(400, "Upload the rota as Excel")
     check_month(month)
     if seed is None:
         seed = random.randrange(1_000_000)
@@ -294,3 +301,31 @@ async def set_mode(body: ModeRequest):
         raise HTTPException(400, "mode must be 'rules' or 'agent'")
     store.mode = body.mode
     return {"mode": store.mode}
+
+@router.get("/roster/{month}/template")
+async def roster_template(month: str):
+    check_month(month)
+    if not store.members:
+        raise HTTPException(409, "Members are not loaded from ServiceNow yet. Try again in a minute.")
+    data = build_template(month, store.members, store.roster)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="rota-{month}.xlsx"'})
+
+
+@router.post("/roster/{month}/upload")
+async def roster_upload(month: str, file: UploadFile = File(...)):
+    check_month(month)
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Upload an .xlsx file")
+    content = await file.read()
+    if len(content) > 2_000_000:
+        raise HTTPException(413, "File too large")
+    try:
+        data, warnings = parse_template(io.BytesIO(content), store.members, month)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    store.apply_roster(month, data)
+    store.log_event(store.clock.now(), "-", "ROTA_UPLOADED", f"{month}: {len(data)} member(s)", "admin")
+    return {"ok": True, "members_updated": len(data), "warnings": warnings}

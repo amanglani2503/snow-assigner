@@ -1,4 +1,5 @@
 import os
+import json
 
 # Mock for the POC. In production: https://yourcompany.service-now.com
 # On Cloud Run (Step 7) this becomes http://127.0.0.1:8080/mock-snow
@@ -24,3 +25,5 @@ os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 AGENT_TIMEOUT_SECONDS = float(os.getenv("AGENT_TIMEOUT_SECONDS", "45"))
 AGENT_MAX_CONCURRENT = int(os.getenv("AGENT_MAX_CONCURRENT", "4"))
+
+ROSTER_FILE = os.getenv("ROSTER_FILE", "data/roster.json")   # "" disables persistence

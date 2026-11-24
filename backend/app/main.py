@@ -49,6 +49,7 @@ async def _assign_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    store.load_roster_file()
     task = asyncio.create_task(_assign_loop())
     yield
     task.cancel()
