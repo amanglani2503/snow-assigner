@@ -117,3 +117,5 @@ button.l2 { background: #d9480f; }
   text-overflow: ellipsis;
 }
 .actions { min-width: 340px; }
+.badge.WAITING { background: #fff3bf; color: #a66a00; }
+.badge.CLOSED { background: #e9ecef; color: #495057; }

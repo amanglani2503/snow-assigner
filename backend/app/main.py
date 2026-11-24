@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
+from app.tickets.work import evaluate_work_sla
 from app.agent.dispatcher import dispatch
 from app.api.routes import router
 from app.snow.mock_api import router as mock_snow_router
@@ -38,6 +38,7 @@ async def _assign_loop():
                     log.exception("ticket sync failed")
         try:
             await dispatch(store)
+            evaluate_work_sla(store, store.clock.now())
         except Exception:
             log.exception("dispatch failed")
         if config.SNOW_LIVE:

@@ -24,3 +24,10 @@ class Ticket:
     handover_note: str = ""               # e.g. "Reassigned from Aarav Sharma", prefixed to the next reason
     level: str = "L1"                     # L1 | L2
     escalated_from: Optional[str] = None  # the L1 group it came from, if escalated
+    snow_state: str = ""                  # label as shown in ServiceNow
+    state_category: str = "UNASSIGNED"    # UNASSIGNED | WORKING | WAITING | DONE
+    waiting_seconds: float = 0.0          # closed waiting segments, after assignment
+    wait_since: Optional[datetime] = None # start of the current waiting segment
+    closed_at: Optional[datetime] = None
+    work_breached: bool = False
+    breach_reasons: list = field(default_factory=list)

@@ -3,6 +3,7 @@ import { api, GROUPS, L2_GROUP } from './api'
 import type { Metrics, Ticket } from './api'
 
 const when = (iso: string) => iso.slice(5, 10) + ' ' + iso.slice(11, 16)
+const dur = (s: number | null) => s === null ? '-' : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 
 function countdown(t: Ticket) {
   if (t.status === 'QUEUED' && t.release_at) return 'from ' + when(t.release_at)
@@ -86,6 +87,7 @@ export default function Board({ tickets, metrics, onChange }: {
           <option>QUEUED</option>
           <option>PENDING</option>
           <option>ASSIGNED</option>
+          <option>CLOSED</option>
         </select>
         <span className="hint">{rows.length} tickets</span>
       </div>
@@ -96,10 +98,11 @@ export default function Board({ tickets, metrics, onChange }: {
             <tr>
               <th>Ticket</th><th>Group</th><th>Description</th><th>Opened</th>
               <th>Deadline</th><th>Status</th><th>Assigned to</th><th>Countdown</th><th>Actions</th>
+              <th>State</th><th>Active work</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={9} className="empty">No tickets yet. Use the simulator.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={11} className="empty">No tickets yet. Use the simulator.</td></tr>}
             {rows.map((t) => (
               <tr key={t.sys_id} title={t.reason}>
                 <td>{t.number}</td>
@@ -124,6 +127,9 @@ export default function Board({ tickets, metrics, onChange }: {
                 </td>
                 <td>{countdown(t)}</td>
                 <td><Actions t={t} metrics={metrics} onChange={onChange} onMsg={setMsg} /></td>
+                <td>{t.snow_state || '-'}{t.state_category === 'WAITING' && <span className="badge WAITING">WAITING</span>}</td>
+                <td>{t.assigned_to ? `${dur(t.work_seconds)} / ${dur(t.work_limit_seconds)}` : '-'}
+                  {t.waited_seconds > 0 && <div className="hint">waited {dur(t.waited_seconds)}</div>}</td>
               </tr>
             ))}
           </tbody>
