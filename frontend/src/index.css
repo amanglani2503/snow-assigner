@@ -119,3 +119,34 @@ button.l2 { background: #d9480f; }
 .actions { min-width: 340px; }
 .badge.WAITING { background: #fff3bf; color: #a66a00; }
 .badge.CLOSED { background: #e9ecef; color: #495057; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.kpi { background: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.kpi.clickable { cursor: pointer; border-left: 4px solid #e03131; }
+.kpi.clickable:hover { background: #fff5f5; }
+.kpi .label { font-size: 12px; color: #5b6478; }
+.kpi .value { font-size: 28px; font-weight: 700; }
+.delta { font-size: 12px; font-weight: 600; margin-left: 6px; }
+.delta.good { color: #2b8a3e; }
+.delta.bad { color: #c92a2a; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.chartbox { margin-bottom: 0; }
+.chip { background: #e3e8f2; color: #1d2433; flex: none !important; }
+.chip.active { background: #3b5bdb; color: #fff; }
+.riskgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.riskrow { font-size: 13px; padding: 4px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.riskrow .bar { width: 90px; flex: none; }
+.heat { display: grid; grid-template-columns: 36px repeat(24, 1fr); gap: 2px; align-items: center; }
+.heathead, .heatlabel { font-size: 10px; color: #5b6478; text-align: center; }
+.heatcell { height: 22px; border-radius: 3px; }
+th.sortable { cursor: pointer; user-select: none; }
+tr.clickrow { cursor: pointer; }
+tr.clickrow:hover, tr.sel { background: #edf2ff; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 50; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 95vw); background: #fff; z-index: 51;
+          padding: 16px; overflow-y: auto; box-shadow: -4px 0 16px rgba(0,0,0,.2); }
+.timeline { margin-top: 12px; border-top: 1px solid #e6e9f0; padding-top: 8px; }
+.tl { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 0; }
+.tltime { color: #5b6478; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tldetail { flex: 1; }
+.badge.STATE_CHANGE, .badge.INGESTED { background: #e7f5ff; color: #1971c2; }
+@media (max-width: 900px) { .kpis { grid-template-columns: 1fr 1fr; } .charts, .riskgrid { grid-template-columns: 1fr; } }

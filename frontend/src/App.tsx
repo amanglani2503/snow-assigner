@@ -6,9 +6,10 @@ import Board from './Board'
 import Roster from './Roster'
 import Insights from './Insights'
 import './index.css'
+import Dashboard from './Dashboard'
 
-type Tab = 'board' | 'roster' | 'log'
 type Mode = 'rules' | 'agent'
+type Tab = 'dashboard' | 'board' | 'roster' | 'log'
 
 export default function App() {
   const [clock, setClock] = useState<ClockInfo | null>(null)
@@ -16,7 +17,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [mode, setModeState] = useState<Mode>('rules')
-  const [tab, setTab] = useState<Tab>('board')
+  const [tab, setTab] = useState<Tab>('dashboard')
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
@@ -103,10 +104,12 @@ export default function App() {
         </aside>
         <main>
           <nav className="tabs">
+            <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Dashboard</button>
             <button className={tab === 'board' ? 'active' : ''} onClick={() => setTab('board')}>Live board</button>
             <button className={tab === 'roster' ? 'active' : ''} onClick={() => setTab('roster')}>Roster</button>
             <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>Log and agent activity</button>
           </nav>
+          {tab === 'dashboard' && <Dashboard />}
           {tab === 'board' && <Board tickets={tickets} metrics={metrics} onChange={refresh} />}
           {tab === 'roster' && <Roster clock={clock} />}
           {tab === 'log' && <Insights audit={audit} metrics={metrics} onChange={refresh} />}

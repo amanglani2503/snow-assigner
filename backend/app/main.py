@@ -15,6 +15,7 @@ from app.state import store
 import time
 from app import config
 from app.snow.sync import sync_members, sync_tickets, flush_outbox
+from app.api.analytics import router as analytics_router
 
 log = logging.getLogger("snow-assigner")
 TICK_SECONDS = 60
@@ -71,6 +72,8 @@ app.add_middleware(
 app.include_router(router)                                            # Swagger at /docs
 app.include_router(router, prefix="/api", include_in_schema=False)    # what the React app calls
 app.include_router(mock_snow_router, prefix="/mock-snow")
+app.include_router(analytics_router)
+app.include_router(analytics_router, prefix="/api", include_in_schema=False)
 
 # In the container the built React app is copied to /app/static. Locally this folder
 # doesn't exist and the Vite dev server (port 5173) is used instead.

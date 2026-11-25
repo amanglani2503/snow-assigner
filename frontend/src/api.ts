@@ -85,6 +85,40 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T>(path: string, body?: unknown) =>
   req<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
 
+export interface Kpis {
+  received: number; open: number
+  assign_sla_pct: number | null; work_sla_pct: number | null
+  assign_breaches: number; work_breaches: number
+  avg_assign_seconds: number | null; avg_work_seconds: number | null; avg_wait_seconds: number | null
+  auto_pct: number | null
+}
+
+
+export interface BreachRow {
+  sys_id: string; number: string; description: string; group: string; priority: string; member: string
+  types: ('assignment' | 'work')[]; assign_over_seconds: number; work_over_seconds: number
+  work_seconds: number | null; waited_seconds: number | null; opened_at: string; status: string
+}
+
+
+export interface Analytics {
+  now: string; target: number; all_groups: string[]
+  period: { start: string; end: string; hourly: boolean }
+  kpis: Kpis; prev: Kpis; groups: string[]
+  volume: Record<string, string | number>[]
+  sla_trend: { label: string; assignment: number | null; work: number | null }[]
+  flow: { name: string; value: number }[]
+  work_vs_wait: { group: string; work_min: number; wait_min: number }[]
+  assign_dist: { label: string; count: number }[]
+  heatmap: number[][]
+  group_table: { group: string; received: number; breaches: number; assign_sla_pct: number | null; work_sla_pct: number | null; avg_work_seconds: number | null }[]
+  breaches: BreachRow[]
+  at_risk: {
+    work: { sys_id: string; number: string; group: string; member: string; used_pct: number; remaining_seconds: number }[]
+    assign: { sys_id: string; number: string; group: string; seconds_left: number }[]
+  }
+}
+
 export const api = {
   clock: () => req<ClockInfo>('/clock'),
   setClock: (time: string) => req<ClockInfo>('/clock', { method: 'PUT', body: JSON.stringify({ time }) }),
@@ -111,5 +145,7 @@ export const api = {
     if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail ?? `${r.status}`)
     return r.json() as Promise<{ ok: boolean; members_updated: number; warnings: string[] }>
   },
+  analytics: (query: string) => req<Analytics>('/analytics?' + query),
+  timeline: (id: string) => req<{ number: string; events: AuditEntry[] }>(`/analytics/ticket/${id}/timeline`),
 }
 

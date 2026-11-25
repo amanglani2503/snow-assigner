@@ -36,3 +36,7 @@ WAITING_STATES = _set("WAITING_STATES", "awaiting_customer,awaiting_user,solved_
 DONE_STATES = _set("DONE_STATES", "solved_confirmed,closed")
 WORK_SLA_MINUTES = int(os.getenv("WORK_SLA_MINUTES", "480"))
 WORK_SLA_BY_PRIORITY = json.loads(os.getenv("WORK_SLA_BY_PRIORITY", "{}"))   # e.g. {"1": 120, "2": 240}
+
+SLA_TARGET_PCT = float(os.getenv("SLA_TARGET_PCT", "95"))               # target line on the SLA trend
+AT_RISK_PCT = float(os.getenv("AT_RISK_PCT", "80"))                     # % of work limit used
+AT_RISK_ASSIGN_MINUTES = int(os.getenv("AT_RISK_ASSIGN_MINUTES", "10")) # pending ticket close to its deadline
