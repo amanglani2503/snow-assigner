@@ -13,3 +13,8 @@ frontend/dist/
 .env
 Thumbs.db
 desktop.ini
+
+__pycache__/
+*.py[cod]
+*.pyo
+.idea/

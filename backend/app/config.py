@@ -27,3 +27,12 @@ AGENT_TIMEOUT_SECONDS = float(os.getenv("AGENT_TIMEOUT_SECONDS", "45"))
 AGENT_MAX_CONCURRENT = int(os.getenv("AGENT_MAX_CONCURRENT", "4"))
 
 ROSTER_FILE = os.getenv("ROSTER_FILE", "data/roster.json")   # "" disables persistence
+
+SNOW_STATE_FIELD = os.getenv("SNOW_STATE_FIELD", "state")      # field that holds your status labels
+SNOW_ASSIGN_STATE = os.getenv("SNOW_ASSIGN_STATE", "")         # optional state VALUE to set on assignment
+def _set(name, default):
+    return {s.strip() for s in os.getenv(name, default).split(",") if s.strip()}
+WAITING_STATES = _set("WAITING_STATES", "awaiting_customer,awaiting_user,solved_proposed,on_hold")
+DONE_STATES = _set("DONE_STATES", "solved_confirmed,closed")
+WORK_SLA_MINUTES = int(os.getenv("WORK_SLA_MINUTES", "480"))
+WORK_SLA_BY_PRIORITY = json.loads(os.getenv("WORK_SLA_BY_PRIORITY", "{}"))   # e.g. {"1": 120, "2": 240}

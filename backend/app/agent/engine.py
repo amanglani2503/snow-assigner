@@ -81,6 +81,11 @@ def assign_to_member(store, ticket, member_id, now, reason, actor="rules"):
         # The first assignment decides the SLA. A later reassignment never changes it.
         ticket.assigned_at = now
         ticket.breached = now > ticket.deadline
+        if ticket.breached:
+            ticket.breach_reasons.append("Assignment SLA: assigned after the deadline")
+        if ticket.state_category == "WAITING":
+            ticket.wait_since = now
+            
     store.last_assigned[member.id] = store.next_seq()
 
     if ticket.handover_note:

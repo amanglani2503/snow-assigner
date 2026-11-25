@@ -16,7 +16,7 @@ from app.agent.engine import (
 from app.roster.generator import days_in_month, org_holiday_dates
 from app.roster.models import GROUPS
 from app.rules.shifts import is_on_shift
-from app.rules.sla import is_serviceable
+from app.tickets.work import work_seconds, work_limit_seconds, waited_seconds
 from app.state import store
 from app.tickets.simulate import SCENARIOS, simulate
 from fastapi import UploadFile, File
@@ -66,6 +66,10 @@ def ticket_view(t, names=None) -> dict:
         int((t.deadline - now).total_seconds())
         if t.deadline and t.status == "PENDING" and not t.reassign_pending else None
     )
+    w = work_seconds(t, now)
+    d["work_seconds"] = None if w is None else int(w)
+    d["work_limit_seconds"] = work_limit_seconds(t)
+    d["waited_seconds"] = int(waited_seconds(t, now)) if t.assigned_at else 0
     return d
 
 
@@ -256,11 +260,14 @@ async def member_back(member_id: str):
 @router.get("/metrics")
 async def metrics():
     tickets = list(store.tickets.values())
+    handled = [t for t in tickets if t.status in ("ASSIGNED", "CLOSED") and t.assigned_at and not t.external]
+    ok = [t for t in handled if not t.breached]
+    closed = [t for t in handled if t.status == "CLOSED"]
+    now = store.clock.now()
+    works = [work_seconds(t, now) for t in closed]
     assigned = [t for t in tickets if t.status == "ASSIGNED"]
-    ok = [t for t in assigned if not t.breached]
     waits = [get_wait_seconds(t) for t in assigned if get_wait_seconds(t) is not None]
     load = store.load()
-    now = store.clock.now()
     store.ensure_roster(now)
     return {
         "total": len(tickets),
@@ -268,7 +275,10 @@ async def metrics():
         "pending": sum(t.status == "PENDING" for t in tickets),
         "queued": sum(t.status == "QUEUED" for t in tickets),
         "breached": sum(t.breached for t in tickets),
-        "within_sla_pct": round(100 * len(ok) / len(assigned), 1) if assigned else None,
+        "within_sla_pct": round(100 * len(ok) / len(handled), 1) if handled else None,
+        "closed": len(closed),
+        "work_breached": sum(t.work_breached for t in tickets),
+        "avg_active_work_seconds": round(sum(works) / len(works), 1) if works else None,
         "avg_seconds_to_assign": round(sum(waits) / len(waits), 1) if waits else None,
         "load_per_member": [
             {"id": m.id, "name": m.name, "group": m.group, "open": load.get(m.id, 0),

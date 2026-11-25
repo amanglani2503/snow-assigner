@@ -35,11 +35,9 @@ class ServiceNowClient:
 
     async def assign(self, sys_id: str, member_id: str, work_notes: str = "", actor: str = "agent") -> dict:
         """Make an actual PATCH call to ServiceNow to assign the ticket in production."""
-        payload = {
-            "assigned_to": member_id,
-            "work_notes": work_notes,
-            "state": "2"  # 2 = In Progress / Assigned in ServiceNow
-        }
+        payload = {"assigned_to": member_id, "work_notes": work_notes}
+        if config.SNOW_ASSIGN_STATE:
+            payload["state"] = config.SNOW_ASSIGN_STATE
         headers = {**self.headers, "X-Actor": actor}
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
@@ -74,23 +72,36 @@ class ServiceNowClient:
                 raise SnowError(f"Failed to fetch group members: {e}")
 
     async def list_active_for_group(self, group: str) -> list:
-        """Raw values: datetimes come back as UTC, references as sys_ids."""
         query = f"assignment_group.name={group}^active=true"
         if config.SNOW_EXTRA_QUERY:
             query += "^" + config.SNOW_EXTRA_QUERY
+        fields = f"sys_id,number,short_description,priority,opened_at,assigned_to,{config.SNOW_STATE_FIELD}"
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.get(
                     f"{self.base_url}api/now/table/incident",
                     params={"sysparm_query": query + "^ORDERBYopened_at", "sysparm_limit": 500,
-                            "sysparm_fields": "sys_id,number,short_description,priority,opened_at,assigned_to",
-                            "sysparm_exclude_reference_link": "true",
-                            "sysparm_display_value": "false"},
+                            "sysparm_fields": fields, "sysparm_exclude_reference_link": "true",
+                            "sysparm_display_value": "all"},
                     headers=self.headers)
                 response.raise_for_status()
                 return response.json().get("result", [])
             except httpx.HTTPError as e:
                 raise SnowError(f"Failed to list tickets for {group}: {e}")
+
+    async def get_incident_state(self, sys_id: str) -> dict:
+        fields = f"sys_id,{config.SNOW_STATE_FIELD},closed_at,resolved_at"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}api/now/table/incident/{sys_id}",
+                    params={"sysparm_fields": fields, "sysparm_exclude_reference_link": "true",
+                            "sysparm_display_value": "all"},
+                    headers=self.headers)
+                response.raise_for_status()
+                return response.json().get("result", {})
+            except httpx.HTTPError as e:
+                raise SnowError(f"Failed to read incident {sys_id}: {e}")
 
     async def list_assigned_to(self, member_id: str) -> list:
         async with httpx.AsyncClient(timeout=30.0) as client:

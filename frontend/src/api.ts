@@ -20,7 +20,7 @@ export interface Ticket {
   opened_at: string
   in_service_hours: boolean
   deadline: string | null
-  status: 'QUEUED' | 'PENDING' | 'ASSIGNED'
+  status: 'QUEUED' | 'PENDING' | 'ASSIGNED' | 'CLOSED'
   release_at: string | null
   level: string
   escalated_from: string | null
@@ -32,6 +32,12 @@ export interface Ticket {
   seconds_to_deadline: number | null
   previous_assignee_names: string[]
   reassign_pending: boolean
+  snow_state: string
+  state_category: string
+  work_seconds: number | null
+  work_limit_seconds: number
+  waited_seconds: number
+  breach_reasons: string[]
 }
 
 export interface ClockInfo { now: string; weekday: string; in_service_hours: boolean; holiday: boolean }
